@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../models/simulation_values.dart';
@@ -79,53 +81,86 @@ class _RideHudScreenState extends State<RideHudScreen> {
     setState(() => _sim = next);
 
     if (next.leftDistance < previous.leftDistance) {
-      AlertNotificationService.instance.notifyHazard(
+      _notifyHazard(
         category: HazardCategory.distanceShortening,
         title: '左後方車輛逐漸接近',
         body: '與後方車輛距離持續縮短',
       );
     }
     if (next.rightDistance < previous.rightDistance) {
-      AlertNotificationService.instance.notifyHazard(
+      _notifyHazard(
         category: HazardCategory.distanceShortening,
         title: '右後方車輛逐漸接近',
         body: '與後方車輛距離持續縮短',
       );
     }
     if (next.leftApproaching && !previous.leftApproaching) {
-      AlertNotificationService.instance.notifyHazard(
+      _notifyHazard(
         category: HazardCategory.approaching,
         title: '左後方車輛逼近',
         body: '左後方車輛正在逼近中',
       );
     }
     if (next.rightApproaching && !previous.rightApproaching) {
-      AlertNotificationService.instance.notifyHazard(
+      _notifyHazard(
         category: HazardCategory.approaching,
         title: '右後方車輛逼近',
         body: '右後方車輛正在逼近中',
       );
     }
     if (next.potholeFrontLeft && !previous.potholeFrontLeft) {
-      AlertNotificationService.instance.notifyHazard(
+      _notifyHazard(
         category: HazardCategory.pothole,
         title: '前方左側坑洞',
         body: '請減速並注意路面',
       );
     }
     if (next.potholeFrontCenter && !previous.potholeFrontCenter) {
-      AlertNotificationService.instance.notifyHazard(
+      _notifyHazard(
         category: HazardCategory.pothole,
         title: '前方中央坑洞',
         body: '請減速並注意路面',
       );
     }
     if (next.potholeFrontRight && !previous.potholeFrontRight) {
-      AlertNotificationService.instance.notifyHazard(
+      _notifyHazard(
         category: HazardCategory.pothole,
         title: '前方右側坑洞',
         body: '請減速並注意路面',
       );
+    }
+  }
+
+  // iOS 不使用系統通知（見 AlertNotificationService 說明），改在畫面底部
+  // 用 SnackBar 顯示同樣的標題／內文，取代系統通知橫幅；Android 則維持
+  // 只靠系統通知呈現，不疊加 SnackBar。
+  void _notifyHazard({
+    required HazardCategory category,
+    required String title,
+    required String body,
+  }) {
+    AlertNotificationService.instance.notifyHazard(category: category, title: title, body: body);
+    if (Platform.isIOS) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: HudColors.danger,
+            duration: const Duration(seconds: 3),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+                ),
+                Text(body, style: const TextStyle(color: Colors.white)),
+              ],
+            ),
+          ),
+        );
     }
   }
 

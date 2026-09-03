@@ -117,13 +117,20 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
     同一個通知 id，新通知會直接覆蓋舊通知，因此每個類別（坑洞／逼近
     車輛／距離縮短）在系統通知列表中永遠只會保留最新一則。
   - **iOS**：完全不使用 `UNUserNotificationCenter`、不申請通知權限
-    （`init()` 對 iOS 直接 no-op）。原因是實測發現即使通知權限已授權，
-    App 在前景時系統通知橫幅仍經常不會顯示（`interruptionLevel:
-    timeSensitive` 需要額外的時效性通知 entitlement，一般權限也無法
-    保證前景橫幅一定跳出），因此改為 `notifyHazard()` 在 iOS 上直接呼叫
-    `SystemSound.play(SystemSoundType.alert)` 播放系統預設提示音
-    （不需權限、前景/背景皆會播放）＋一次 `HapticFeedback.heavyImpact()`
-    震動，不再顯示任何系統通知橫幅。
+    （`init()` 對 iOS 直接 no-op，僅設定 `AudioPlayer`（`audioplayers`
+    套件）的 `AudioContext` 為 `AVAudioSessionCategory.playback`，讓警示音
+    忽略手機的靜音切換鍵）。原因是實測發現即使通知權限已授權，App 在
+    前景時系統通知橫幅仍經常不會顯示（`interruptionLevel: timeSensitive`
+    需要額外的時效性通知 entitlement，一般權限也無法保證前景橫幅一定
+    跳出），因此改為 `notifyHazard()` 在 iOS 上直接用 `AudioPlayer`
+    播放內建的 `assets/sounds/alert.wav`（取代原本會被靜音鍵靜音的
+    `SystemSound.play()`），不再顯示任何系統通知橫幅；畫面提示改由
+    `RideHudScreen._notifyHazard()` 在 iOS 上額外用 `ScaffoldMessenger`
+    顯示浮動 `SnackBar`（`HudColors.danger` 背景、標題+內文兩行文字，
+    顯示 3 秒，新警示會先 `hideCurrentSnackBar()` 再顯示），Android 則
+    維持只靠系統通知呈現、不疊加 SnackBar。
+  - 兩平台改為呼叫 `_longVibration()`：連續 3 次 `HapticFeedback
+    .heavyImpact()`、中間間隔 150ms，模擬出比單次震動更明顯的長震動感。
   - 兩平台的 `notifyHazard()` 呼叫端（`RideHudScreen`）內容一律只
     敘述目前狀態（如「左後方車輛逐漸接近」），不包含變換車道等行動
     建議。

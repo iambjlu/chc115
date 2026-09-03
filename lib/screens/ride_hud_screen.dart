@@ -38,10 +38,10 @@ class _RideHudScreenState extends State<RideHudScreen> {
     final approaching = _threats.where((t) => t.isApproaching).toList();
     if (approaching.isEmpty) return null;
     if (approaching.length > 1) {
-      return const _AlertInfo(label: '左右後方', suggestion: '請注意安全');
+      return const _AlertInfo(label: '左右後方');
     }
     final threat = approaching.first;
-    return _AlertInfo(label: threat.label, suggestion: threat.suggestion);
+    return _AlertInfo(label: threat.label);
   }
 
   // 依左前/正前/右前順序列出目前亮起的坑洞方向，多個方向用「、」分隔。
@@ -77,13 +77,13 @@ class _RideHudScreenState extends State<RideHudScreen> {
     if (next.leftDistance < previous.leftDistance) {
       AlertNotificationService.instance.notifyHazard(
         title: '左後方車輛逐漸接近',
-        body: '建議向右側變換車道',
+        body: '與後方車輛距離持續縮短',
       );
     }
     if (next.rightDistance < previous.rightDistance) {
       AlertNotificationService.instance.notifyHazard(
         title: '右後方車輛逐漸接近',
-        body: '建議向左側變換車道',
+        body: '與後方車輛距離持續縮短',
       );
     }
     if (next.potholeFrontLeft && !previous.potholeFrontLeft) {
@@ -209,10 +209,9 @@ class _PotholeAlertLine extends StatelessWidget {
 }
 
 class _AlertInfo {
-  const _AlertInfo({required this.label, required this.suggestion});
+  const _AlertInfo({required this.label});
 
   final String label;
-  final String suggestion;
 }
 
 class _AlertLines extends StatelessWidget {
@@ -225,35 +224,19 @@ class _AlertLines extends StatelessWidget {
     final titleStyle = Theme.of(
       context,
     ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800, color: HudColors.danger);
-    return AnimatedSize(
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOut,
-      alignment: Alignment.topCenter,
-      child: alert == null
-          ? const SizedBox(width: double.infinity)
-          : Padding(
-              padding: const EdgeInsets.fromLTRB(22, 6, 22, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.warning_rounded, size: 18, color: HudColors.warn),
-                      const SizedBox(width: 8),
-                      Text('${alert!.label}車輛快速逼近', style: titleStyle),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(Icons.info_rounded, size: 18, color: Theme.of(context).colorScheme.primary),
-                      const SizedBox(width: 8),
-                      Text(alert!.suggestion, style: titleStyle),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 6, 22, 0),
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 220),
+        opacity: alert == null ? 0 : 1,
+        child: Row(
+          children: [
+            const Icon(Icons.warning_rounded, size: 18, color: HudColors.warn),
+            const SizedBox(width: 8),
+            Text(alert == null ? ' ' : '${alert!.label}車輛快速逼近', style: titleStyle),
+          ],
+        ),
+      ),
     );
   }
 }

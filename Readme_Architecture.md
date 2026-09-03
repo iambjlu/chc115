@@ -63,7 +63,7 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   - `ThreatThresholds`：安全／注意／危險的距離門檻常數。
   - `level`（`ThreatLevel`：safe/caution/danger）：由距離換算。
   - `arcCount`：依威脅等級決定雷達要畫幾層弧線。
-  - `label` / `suggestion`：中文提示文字（如「建議向右側變換車道」）。
+  - `label`：中文方位文字（「左後方」／「右後方」）。
 
 ### screens（頁面／狀態管理）
 
@@ -81,17 +81,20 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
       `rightDistance` 變小）就觸發一次通知，不論 `leftApproaching`／
       `rightApproaching` 開關是否開啟（該開關僅影響畫面上的逼近警示
       文字與雷達三角形，不再是通知觸發條件）。通知標題為「左（右）
-      後方車輛逐漸接近」，內文為變換車道建議。
+      後方車輛逐漸接近」，內文僅敘述目前狀態（距離持續縮短），不含
+      任何變換車道等行動建議；畫面上的 `_AlertLines` 警示文字同樣只
+      顯示「{左／右／左右}後方車輛快速逼近」單行狀態敘述。
     - 前方坑洞：維持「由假變真」才觸發一次，避免同一坑洞持續開啟時
       反覆通知。
-  - 畫面內含三個私有元件：`_StatusBar`（車速讀數）、
-    `_AlertLines`（逼近警示的兩行文字，`AnimatedSize` 做展開/收合動畫）與
-    `_PotholeAlertLine`（坑洞提示文字，依左前/正前/右前順序列出目前亮起
-    的方向，多個方向以「、」分隔，格式如「請注意左前、正前坑洞」；
-    與系統通知並行顯示）。`_PotholeAlertLine` 樣式比照 `_AlertLines`
-    （`Icon(Icons.warning_rounded)` + 粗體文字、同一組配色），並固定
-    保留一行高度用 `AnimatedOpacity` 做淡入淡出，而非整塊展開/收合，
-    避免有無坑洞提示切換時造成下方 `MapCard`／雷達視圖位移。
+  - 畫面內含三個私有元件：`_StatusBar`（車速讀數）、`_AlertLines`
+    （後方車輛逼近警示，一行 `Icon(Icons.warning_rounded)` + 粗體文字）
+    與 `_PotholeAlertLine`（坑洞提示文字，依左前/正前/右前順序列出
+    目前亮起的方向，多個方向以「、」分隔，格式如「請注意左前、正前
+    坑洞」；與系統通知並行顯示，樣式比照 `_AlertLines`）。這兩個提示
+    元件皆固定保留一行高度、以 `AnimatedOpacity` 做淡入淡出（沒有提示
+    時文字改為單一空白字元、opacity 降為 0），而非用 `AnimatedSize`
+    整塊展開/收合，避免提示出現/消失時造成下方 `MapCard`／雷達視圖
+    上下位移。
 
 ### services（服務層）
 
@@ -156,7 +159,7 @@ RideHudScreen._sim  (setState)
         └─► _sim.bikeSpeed                 ──► _StatusBar（車速讀數）
 ```
 
-所有威脅判斷邏輯（安全/注意/危險門檻、弧線層數、建議變換車道方向）都
+所有威脅判斷邏輯（安全/注意/危險門檻、弧線層數、方位標籤）都
 集中在 `VehicleThreat`，UI 層（`RadarView`、`RideHudScreen`）只負責讀取
 衍生後的結果進行繪製，不重複業務邏輯。
 

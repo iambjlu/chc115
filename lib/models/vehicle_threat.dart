@@ -42,6 +42,4 @@ class VehicleThreat {
   }
 
   String get label => side == ThreatSide.left ? '左後方' : '右後方';
-
-  String get suggestion => side == ThreatSide.left ? '建議向右側變換車道' : '建議向左側變換車道';
 }

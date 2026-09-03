@@ -147,6 +147,11 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
     （`myLocationEnabled`），並提供右下角「回到目前位置」按鈕重新置中鏡頭。
   - Android/iOS 的 Google Maps API 金鑰分別位於
     `android/local.properties` 與 `ios/Flutter/ApiKeys.xcconfig`（不進版控）。
+    版控中附上對應範本 `android/local.properties.example` 與
+    `ios/Flutter/ApiKeys.xcconfig.example`（皆為 `MAPS_API_KEY=` 佔位字串），
+    換機器/重新取回專案時複製成正式檔名（去掉 `.example`）並貼回真實
+    金鑰即可，`android/local.properties` 的 `sdk.dir`／`flutter.sdk` 兩行則
+    由本機 IDE／`flutter` 工具在開啟專案或執行指令時自動覆寫為正確路徑。
 - **`RadarView`**：整個 HUD 的視覺核心，`StatefulWidget` + `LayoutBuilder`
   依容器寬高做響應式排版與縮放：
   - 中央置放車輛圖示（`assets/bike.png`）。

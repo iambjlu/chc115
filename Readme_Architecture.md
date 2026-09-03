@@ -80,7 +80,8 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
     - 左／右後方車輛：只要新距離比前一次更近（`leftDistance`／
       `rightDistance` 變小）就觸發一次通知，不論 `leftApproaching`／
       `rightApproaching` 開關是否開啟（該開關僅影響畫面上的逼近警示
-      文字與雷達三角形，不再是通知觸發條件）。
+      文字與雷達三角形，不再是通知觸發條件）。通知標題為「左（右）
+      後方車輛逐漸接近」，內文為變換車道建議。
     - 前方坑洞：維持「由假變真」才觸發一次，避免同一坑洞持續開啟時
       反覆通知。
   - 畫面內含三個私有元件：`_StatusBar`（車速讀數）、

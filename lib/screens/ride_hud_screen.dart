@@ -76,13 +76,13 @@ class _RideHudScreenState extends State<RideHudScreen> {
 
     if (next.leftDistance < previous.leftDistance) {
       AlertNotificationService.instance.notifyHazard(
-        title: '左後方車輛逼近',
+        title: '左後方車輛逐漸接近',
         body: '建議向右側變換車道',
       );
     }
     if (next.rightDistance < previous.rightDistance) {
       AlertNotificationService.instance.notifyHazard(
-        title: '右後方車輛逼近',
+        title: '右後方車輛逐漸接近',
         body: '建議向左側變換車道',
       );
     }

@@ -76,16 +76,21 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
     `SimulationSheet 使用者輸入 → RideHudScreen.setState → 重新計算 threats/alert → 往下傳給 RadarView`。
   - `_applySimulationValues()`：在 `setState` 更新前後比較新舊
     `SimulationValues`，觸發 `services/alert_notification_service.dart`
-    的 `AlertNotificationService.notifyHazard()`（系統通知＋一次震動）：
-    - 左／右後方車輛：只要新距離比前一次更近（`leftDistance`／
-      `rightDistance` 變小）就觸發一次通知，不論 `leftApproaching`／
-      `rightApproaching` 開關是否開啟（該開關僅影響畫面上的逼近警示
-      文字與雷達三角形，不再是通知觸發條件）。通知標題為「左（右）
-      後方車輛逐漸接近」，內文僅敘述目前狀態（距離持續縮短），不含
-      任何變換車道等行動建議；畫面上的 `_AlertLines` 警示文字同樣只
-      顯示「{左／右／左右}後方車輛快速逼近」單行狀態敘述。
-    - 前方坑洞：維持「由假變真」才觸發一次，避免同一坑洞持續開啟時
-      反覆通知。
+    的 `AlertNotificationService.notifyHazard()`（系統通知＋一次震動），
+    分成三個類別各自呼叫，同類別新通知會覆蓋舊通知（見 services 章節
+    的 `HazardCategory`），因此每個類別畫面上永遠只保留最新一則：
+    - 距離縮短（`HazardCategory.distanceShortening`）：左右後方只要
+      新距離比前一次更近（`leftDistance`／`rightDistance` 變小）就
+      觸發一次，不論 `leftApproaching`／`rightApproaching` 開關是否
+      開啟；標題為「左（右）後方車輛逐漸接近」。
+    - 逼近車輛（`HazardCategory.approaching`）：`leftApproaching`／
+      `rightApproaching` 由假變真才觸發一次，避免開關持續開啟時反覆
+      通知；標題為「左（右）後方車輛逼近」，內文為變換車道建議。
+      畫面上的 `_AlertLines` 警示文字則只顯示
+      「{左／右／左右}後方車輛快速逼近」單行狀態敘述，與通知內容分開。
+    - 坑洞（`HazardCategory.pothole`）：左前/正前/右前皆由假變真才
+      觸發一次，避免同一坑洞持續開啟時反覆通知；三個方向共用同一個
+      通知 id，因此只會保留最新觸發的那一個方向。
   - 畫面內含三個私有元件：`_StatusBar`（車速讀數）、`_AlertLines`
     （後方車輛逼近警示，一行 `Icon(Icons.warning_rounded)` + 粗體文字）
     與 `_PotholeAlertLine`（坑洞提示文字，依左前/正前/右前順序列出
@@ -98,13 +103,19 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
 
 ### services（服務層）
 
+- **`HazardCategory`**（`enum`）：`pothole` / `approaching` /
+  `distanceShortening` 三個危險事件類別，其 `index` 直接作為
+  `flutter_local_notifications` 的通知 id。
 - **`AlertNotificationService`**：坑洞、車輛逼近等危險事件的系統通知
   單例（`instance`）。`main.dart` 於 `runApp` 前呼叫 `init()` 建立
   Android 通知頻道（`Importance.max` + 有聲音）並請求 Android/iOS 的
-  通知權限；`notifyHazard({title, body})` 用
-  `flutter_local_notifications` 顯示高優先權通知（Android heads-up、
-  iOS `InterruptionLevel.timeSensitive`）並搭配一次
-  `HapticFeedback.heavyImpact()` 震動，讓騎士即使沒看螢幕也能感知警示。
+  通知權限；`notifyHazard({category, title, body})` 用
+  `flutter_local_notifications` 以 `id: category.index` 顯示高優先權
+  通知（Android heads-up、iOS `InterruptionLevel.timeSensitive`）並
+  搭配一次 `HapticFeedback.heavyImpact()` 震動。由於同一 `category`
+  固定使用同一個通知 id，新通知會直接覆蓋舊通知，因此每個類別
+  （坑洞／逼近車輛／距離縮短）在系統通知列表中永遠只會保留最新一則，
+  不會無限堆疊；讓騎士即使沒看螢幕也能感知警示。
 
 ### widgets（UI 元件）
 

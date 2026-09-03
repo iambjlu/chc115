@@ -29,6 +29,8 @@ chc115/
 │   │   ├── live_google_map.dart
 │   │   ├── radar_view.dart
 │   │   └── simulation_sheet.dart
+│   ├── services/                # 與 UI 無關的服務層
+│   │   └── alert_notification_service.dart
 │   └── theme/                   # 視覺樣式
 │       └── hud_colors.dart
 ├── assets/                      # 靜態資源（如 bike.png）
@@ -72,11 +74,30 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   - `_openSimulationSheet()` 開啟 `SimulationSheet`，透過 `onChanged`
     回呼以 `setState` 更新 `_sim`，形成單向資料流：
     `SimulationSheet 使用者輸入 → RideHudScreen.setState → 重新計算 threats/alert → 往下傳給 RadarView`。
+  - `_applySimulationValues()`：在 `setState` 更新前後比較新舊
+    `SimulationValues`，觸發 `services/alert_notification_service.dart`
+    的 `AlertNotificationService.notifyHazard()`（系統通知＋一次震動）：
+    - 左／右後方車輛：只要新距離比前一次更近（`leftDistance`／
+      `rightDistance` 變小）就觸發一次通知，不論 `leftApproaching`／
+      `rightApproaching` 開關是否開啟（該開關僅影響畫面上的逼近警示
+      文字與雷達三角形，不再是通知觸發條件）。
+    - 前方坑洞：維持「由假變真」才觸發一次，避免同一坑洞持續開啟時
+      反覆通知。
   - 畫面內含三個私有元件：`_StatusBar`（車速讀數）、
     `_AlertLines`（逼近警示的兩行文字，`AnimatedSize` 做展開/收合動畫）與
     `_PotholeAlertLine`（坑洞提示文字，依左前/正前/右前順序列出目前亮起
     的方向，多個方向以「、」分隔，格式如「⚠️請注意左前、正前坑洞」；
     與系統通知並行顯示，`AnimatedSize` 做展開/收合動畫）。
+
+### services（服務層）
+
+- **`AlertNotificationService`**：坑洞、車輛逼近等危險事件的系統通知
+  單例（`instance`）。`main.dart` 於 `runApp` 前呼叫 `init()` 建立
+  Android 通知頻道（`Importance.max` + 有聲音）並請求 Android/iOS 的
+  通知權限；`notifyHazard({title, body})` 用
+  `flutter_local_notifications` 顯示高優先權通知（Android heads-up、
+  iOS `InterruptionLevel.timeSensitive`）並搭配一次
+  `HapticFeedback.heavyImpact()` 震動，讓騎士即使沒看螢幕也能感知警示。
 
 ### widgets（UI 元件）
 

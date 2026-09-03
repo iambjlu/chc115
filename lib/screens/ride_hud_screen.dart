@@ -67,19 +67,20 @@ class _RideHudScreenState extends State<RideHudScreen> {
     );
   }
 
-  // 由假變真才觸發一次系統通知（高優先權、有聲音）＋一次震動，
-  // 避免同一個危險狀態持續觸發時反覆通知造成干擾。
+  // 左右後方車輛只要距離比先前更近（不論 leftApproaching/rightApproaching
+  // 開關是否開啟）就觸發一次系統通知（高優先權、有聲音）＋一次震動；
+  // 坑洞則維持「由假變真」才觸發，避免同一個危險狀態持續觸發時反覆通知造成干擾。
   void _applySimulationValues(SimulationValues next) {
     final previous = _sim;
     setState(() => _sim = next);
 
-    if (next.leftApproaching && !previous.leftApproaching) {
+    if (next.leftDistance < previous.leftDistance) {
       AlertNotificationService.instance.notifyHazard(
         title: '左後方車輛逼近',
         body: '建議向右側變換車道',
       );
     }
-    if (next.rightApproaching && !previous.rightApproaching) {
+    if (next.rightDistance < previous.rightDistance) {
       AlertNotificationService.instance.notifyHazard(
         title: '右後方車輛逼近',
         body: '建議向左側變換車道',

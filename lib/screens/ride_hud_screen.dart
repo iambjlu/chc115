@@ -52,7 +52,7 @@ class _RideHudScreenState extends State<RideHudScreen> {
       if (_sim.potholeFrontRight) '右前',
     ];
     if (directions.isEmpty) return null;
-    return '⚠️請注意${directions.join('、')}坑洞';
+    return '請注意${directions.join('、')}坑洞';
   }
 
   void _openSimulationSheet() {
@@ -178,6 +178,9 @@ class _StatusBar extends StatelessWidget {
 }
 
 /// 坑洞提示文字（除了系統通知外，畫面上也常駐顯示目前亮起的坑洞方向）。
+/// 樣式比照後方車輛逼近警示（Icon + 粗體文字），並固定保留一行高度，
+/// 避免在「有坑洞提示」與「無坑洞提示」間切換時造成下方 MapCard／
+/// 雷達視圖位移，因此以 `AnimatedOpacity` 淡入淡出取代整塊展開/收合。
 class _PotholeAlertLine extends StatelessWidget {
   const _PotholeAlertLine({required this.text});
 
@@ -185,19 +188,22 @@ class _PotholeAlertLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = Theme.of(
+    final titleStyle = Theme.of(
       context,
-    ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700, color: HudColors.warn);
-    return AnimatedSize(
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeOut,
-      alignment: Alignment.topCenter,
-      child: text == null
-          ? const SizedBox(width: double.infinity)
-          : Padding(
-              padding: const EdgeInsets.fromLTRB(22, 6, 22, 0),
-              child: Text(text!, style: style),
-            ),
+    ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800, color: HudColors.danger);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 6, 22, 0),
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 220),
+        opacity: text == null ? 0 : 1,
+        child: Row(
+          children: [
+            const Icon(Icons.warning_rounded, size: 18, color: HudColors.warn),
+            const SizedBox(width: 8),
+            Text(text ?? ' ', style: titleStyle),
+          ],
+        ),
+      ),
     );
   }
 }

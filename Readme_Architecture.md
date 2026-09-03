@@ -86,8 +86,11 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   - 畫面內含三個私有元件：`_StatusBar`（車速讀數）、
     `_AlertLines`（逼近警示的兩行文字，`AnimatedSize` 做展開/收合動畫）與
     `_PotholeAlertLine`（坑洞提示文字，依左前/正前/右前順序列出目前亮起
-    的方向，多個方向以「、」分隔，格式如「⚠️請注意左前、正前坑洞」；
-    與系統通知並行顯示，`AnimatedSize` 做展開/收合動畫）。
+    的方向，多個方向以「、」分隔，格式如「請注意左前、正前坑洞」；
+    與系統通知並行顯示）。`_PotholeAlertLine` 樣式比照 `_AlertLines`
+    （`Icon(Icons.warning_rounded)` + 粗體文字、同一組配色），並固定
+    保留一行高度用 `AnimatedOpacity` 做淡入淡出，而非整塊展開/收合，
+    避免有無坑洞提示切換時造成下方 `MapCard`／雷達視圖位移。
 
 ### services（服務層）
 

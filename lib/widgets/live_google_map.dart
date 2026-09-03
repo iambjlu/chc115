@@ -17,6 +17,7 @@ class LiveGoogleMap extends StatefulWidget {
 class _LiveGoogleMapState extends State<LiveGoogleMap> {
   static const _fallbackPosition = LatLng(23.0468, 120.2500); // 南台科技大學一帶（定位失敗時的備援）
   static const _zoom = 17.0;
+  static const _locationTimeout = Duration(seconds: 8); // 避免收不到定位訊號時無限期卡住
 
   GoogleMapController? _controller;
   LatLng? _initialPosition;
@@ -42,12 +43,13 @@ class _LiveGoogleMapState extends State<LiveGoogleMap> {
           permission = await Geolocator.requestPermission();
         }
         if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
-          final current = await Geolocator.getCurrentPosition();
+          final current = await Geolocator.getCurrentPosition().timeout(_locationTimeout);
           return LatLng(current.latitude, current.longitude);
         }
       }
     } catch (_) {
-      // 定位失敗（權限被拒、服務關閉等）時交由呼叫端處理備援。
+      // 定位失敗（權限被拒、服務關閉、逾時等）時交由呼叫端處理備援，
+      // 避免（尤其 iOS）在收不到定位訊號時無限期卡在轉圈圈。
     }
     return null;
   }

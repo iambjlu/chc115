@@ -121,7 +121,9 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
 
 - **`MapCard`**：純包裝層，將 `LiveGoogleMap` 裁切為圓角卡片（固定高度 240）。
 - **`LiveGoogleMap`**：
-  - 用 `geolocator` 取得裝置目前位置；若定位失敗（權限被拒/服務關閉），
+  - 用 `geolocator` 取得裝置目前位置；若定位失敗（權限被拒/服務關閉）
+    或 8 秒內未能取得定位（`Geolocator.getCurrentPosition()` 加上
+    `.timeout()`，避免 iOS 在收不到定位訊號時無限期卡在轉圈圈），
     回退到硬編碼的備援座標（南台科技大學一帶）。
   - 用 `google_maps_flutter` 顯示地圖，開啟原生「目前位置」藍點
     （`myLocationEnabled`），並提供右下角「回到目前位置」按鈕重新置中鏡頭。

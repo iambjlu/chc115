@@ -85,7 +85,8 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
       開啟；標題為「左（右）後方車輛逐漸接近」。
     - 逼近車輛（`HazardCategory.approaching`）：`leftApproaching`／
       `rightApproaching` 由假變真才觸發一次，避免開關持續開啟時反覆
-      通知；標題為「左（右）後方車輛逼近」，內文為變換車道建議。
+      通知；標題為「左（右）後方車輛逼近」，內文為「左（右）後方車輛
+      正在逼近中」，只敘述目前狀態、不含變換車道等行動建議。
       畫面上的 `_AlertLines` 警示文字則只顯示
       「{左／右／左右}後方車輛快速逼近」單行狀態敘述，與通知內容分開。
     - 坑洞（`HazardCategory.pothole`）：左前/正前/右前皆由假變真才
@@ -105,17 +106,27 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
 
 - **`HazardCategory`**（`enum`）：`pothole` / `approaching` /
   `distanceShortening` 三個危險事件類別，其 `index` 直接作為
-  `flutter_local_notifications` 的通知 id。
-- **`AlertNotificationService`**：坑洞、車輛逼近等危險事件的系統通知
-  單例（`instance`）。`main.dart` 於 `runApp` 前呼叫 `init()` 建立
-  Android 通知頻道（`Importance.max` + 有聲音）並請求 Android/iOS 的
-  通知權限；`notifyHazard({category, title, body})` 用
-  `flutter_local_notifications` 以 `id: category.index` 顯示高優先權
-  通知（Android heads-up、iOS `InterruptionLevel.timeSensitive`）並
-  搭配一次 `HapticFeedback.heavyImpact()` 震動。由於同一 `category`
-  固定使用同一個通知 id，新通知會直接覆蓋舊通知，因此每個類別
-  （坑洞／逼近車輛／距離縮短）在系統通知列表中永遠只會保留最新一則，
-  不會無限堆疊；讓騎士即使沒看螢幕也能感知警示。
+  `flutter_local_notifications`（僅 Android 使用）的通知 id。
+- **`AlertNotificationService`**：坑洞、車輛逼近等危險事件的提示單例
+  （`instance`），Android 與 iOS 走完全不同路徑：
+  - **Android**：`main.dart` 於 `runApp` 前呼叫 `init()` 建立通知頻道
+    （`Importance.max` + 有聲音）並請求通知權限；`notifyHazard(
+    {category, title, body})` 用 `flutter_local_notifications` 以
+    `id: category.index` 顯示高優先權通知（heads-up）並搭配一次
+    `HapticFeedback.heavyImpact()` 震動。由於同一 `category` 固定使用
+    同一個通知 id，新通知會直接覆蓋舊通知，因此每個類別（坑洞／逼近
+    車輛／距離縮短）在系統通知列表中永遠只會保留最新一則。
+  - **iOS**：完全不使用 `UNUserNotificationCenter`、不申請通知權限
+    （`init()` 對 iOS 直接 no-op）。原因是實測發現即使通知權限已授權，
+    App 在前景時系統通知橫幅仍經常不會顯示（`interruptionLevel:
+    timeSensitive` 需要額外的時效性通知 entitlement，一般權限也無法
+    保證前景橫幅一定跳出），因此改為 `notifyHazard()` 在 iOS 上直接呼叫
+    `SystemSound.play(SystemSoundType.alert)` 播放系統預設提示音
+    （不需權限、前景/背景皆會播放）＋一次 `HapticFeedback.heavyImpact()`
+    震動，不再顯示任何系統通知橫幅。
+  - 兩平台的 `notifyHazard()` 呼叫端（`RideHudScreen`）內容一律只
+    敘述目前狀態（如「左後方車輛逐漸接近」），不包含變換車道等行動
+    建議。
 
 ### widgets（UI 元件）
 

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
@@ -10,8 +12,14 @@ enum HazardCategory {
 }
 
 /// 坑洞、障礙物、車輛逼近等危險事件的系統通知。
-/// 使用高優先權（Android: max importance + heads-up、iOS: 前景也彈出+聲音），
-/// 並搭配一次觸覺震動，讓騎士即使沒看螢幕也能感知警示。
+///
+/// Android：走 `flutter_local_notifications` 系統通知（max importance + heads-up）。
+/// iOS：實測發現即使已授權，前景時系統通知橫幅仍時常不會顯示（`timeSensitive`
+/// 等級需要額外的時效性通知 entitlement，一般權限也無法保證前景橫幅一定跳出），
+/// 因此 iOS 完全不申請通知權限、不使用 `UNUserNotificationCenter`，改用
+/// `SystemSound.play(SystemSoundType.alert)` 播放系統預設提示音，此 API 不需要
+/// 權限、且不論前景/背景都會直接播放。
+/// 兩平台都搭配一次觸覺震動，讓騎士即使沒看螢幕也能感知警示。
 class AlertNotificationService {
   AlertNotificationService._();
 
@@ -24,14 +32,12 @@ class AlertNotificationService {
   final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
 
   Future<void> init() async {
+    if (Platform.isIOS) {
+      return; // iOS 不使用系統通知，見上方類別註解。
+    }
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const iosInit = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: false,
-      requestSoundPermission: true,
-    );
     await _plugin.initialize(
-      settings: const InitializationSettings(android: androidInit, iOS: iosInit),
+      settings: const InitializationSettings(android: androidInit),
     );
 
     await _plugin
@@ -50,18 +56,22 @@ class AlertNotificationService {
     await _plugin
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
         ?.requestNotificationsPermission();
-    await _plugin
-        .resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>()
-        ?.requestPermissions(alert: true, badge: false, sound: true);
   }
 
-  // 用同一個 category 固定同一個通知 id 呼叫 _plugin.show，讓新通知直接
-  // 覆蓋舊通知，達到「該類別只保留最新一則」的效果。
+  // Android：用同一個 category 固定同一個通知 id 呼叫 _plugin.show，讓新通知
+  // 直接覆蓋舊通知，達到「該類別只保留最新一則」的效果。
+  // iOS：不發系統通知，只播放系統提示音＋震動（前景/背景皆會觸發）。
   Future<void> notifyHazard({
     required HazardCategory category,
     required String title,
     required String body,
   }) async {
+    if (Platform.isIOS) {
+      await SystemSound.play(SystemSoundType.alert);
+      HapticFeedback.heavyImpact();
+      return;
+    }
+
     const androidDetails = AndroidNotificationDetails(
       _channelId,
       _channelName,
@@ -72,18 +82,12 @@ class AlertNotificationService {
       category: AndroidNotificationCategory.alarm,
       visibility: NotificationVisibility.public,
     );
-    const iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentBadge: false,
-      presentSound: true,
-      interruptionLevel: InterruptionLevel.timeSensitive,
-    );
 
     await _plugin.show(
       id: category.index,
       title: title,
       body: body,
-      notificationDetails: const NotificationDetails(android: androidDetails, iOS: iosDetails),
+      notificationDetails: const NotificationDetails(android: androidDetails),
     );
     HapticFeedback.heavyImpact(); // 一次震動
   }

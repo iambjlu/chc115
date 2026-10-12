@@ -46,7 +46,7 @@ arduino-cli upload  --fqbn $FQBN -p /dev/cu.usbserial-10 AMB82_Grove_SSCMA
 arduino-cli monitor -p /dev/cu.usbserial-10 -c baudrate=115200
 ```
 
-開機後依序會印出 `BLE_STARTING`、`BLE_MAC=XX:XX:XX:XX:XX:XX`、`BLE_ADVERTISING name=AMB82-Radar`。序列埠輸入 `m` 可隨時再印一次 MAC（App 的「以 MAC 直接連線」要填這個值，目前 App 內建 `00:E0:4C:0F:60:67`，換板子時需改 `BleRadarService.deviceMac`）。
+開機後依序會印出 `BLE_STARTING`、`BLE_MAC=XX:XX:XX:XX:XX:XX`、`BLE_ADVERTISING name=AMB82-Radar`。序列埠輸入 `m` 可隨時再印一次 MAC（App 掃描時也會以 `BleRadarService.deviceMac`（目前 `00:E0:4C:0F:60:67`）比對裝置，換板子時請核對）。
 手機連上後會出現 `BLE_NOTIFY ON`；手機連上後出現 `BLE_NOTIFY ON` 與每秒一行 `BLE_SEND 1,3,0,1,0,0,0`。
 
 ## App 接收格式（`App接收格式.xlsx`）
@@ -77,4 +77,4 @@ App 的 BLE 權限（附近裝置、定位）首次連線時會跳出，請按�
 1. 開啟 App 先看到歡迎畫面。
 2. 按「連線」：搜尋 `AMB82-Radar`（最多 10 秒），連上後進入 HUD，畫面由板子數據驅動。找不到會顯示錯誤，可再按一次。
 3. 左下角選單（≡）→「斷線」：中斷藍牙並回到歡迎畫面。藍牙中途斷線（板子斷電、離開範圍）也會自動回到歡迎畫面。
-4. 按歡迎畫面底下小字「使用模擬數據繼續」：用原本的模擬數據進入 HUD，選單裡多一項「模擬控制」可手動調整數值。
+4. 長按歡迎畫面的「連線」按鈕，底下會出現小字「使用模擬數據繼續」（重開 App 會再度隱藏）；按它：用原本的模擬數據進入 HUD，選單裡多一項「模擬控制」可手動調整數值。

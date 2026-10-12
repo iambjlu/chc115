@@ -76,8 +76,11 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   `BleRadarService.connect()`，成功則 push `RideHudScreen(mode: ble)`，
   失敗時除了在按鈕下方顯示錯誤文字，也用 `AlertDialog`（可選取文字）顯示
   `BleRadarService.lastError` 的確切原因（含失敗階段與例外內容）；按鈕依
-  `BleRadarService.status` 顯示搜尋中／連線中並停用。按鈕下方的小字
-  「使用模擬數據繼續」則 push `RideHudScreen(mode: simulation)`。
+  `BleRadarService.status` 顯示搜尋中／連線中並停用。
+  標題為「自行車警示系統」、說明文字為空字串，畫面上只有大的「連線」按鈕。
+  「使用模擬數據繼續」按鈕預設隱藏，長按「連線」按鈕才會顯示（僅存在
+  `_showSimulation` 狀態，不持久化，重開 App 即恢復隱藏），按下後 push
+  `RideHudScreen(mode: simulation)`。
 
 - **`RideHudScreen`**：唯一的頁面，也是狀態持有者。
   - 內部持有 `SimulationValues _sim`（初始為 `demo`）。
@@ -180,7 +183,7 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   `sendSimulatedRadar()` 送出一筆模擬數據（12 步一個循環，涵蓋左側遠→中→近、
   右側近→遠、左前／正前／右前坑洞等狀態），格式見 `BleRadarService`。
   開機時序列埠印出 `BLE_STARTING`、`BLE_MAC=…`（`printBleMac()`，輸入 `m` 可重印），
-  供 App 的 MAC 直連（`BleRadarService.deviceMac`）核對。
+  供核對 `BleRadarService.deviceMac`（掃描時也會以此 MAC 比對裝置）。
   草稿放在 `AMB82_Grove_SSCMA/` 子資料夾（Arduino 要求資料夾與草稿同名），
   並加了 `printf` 巨集與前置宣告的相容處理；工具安裝與 arduino-cli 編譯／上傳
   指令見 `arduino/note.md`。
@@ -263,7 +266,7 @@ RideHudScreen._sim  (setState)
 ## 測試
 
 - `test/ble_radar_parse_test.dart`：驗證 `BleRadarService.parse()` 的 7 欄解析、9＝錯誤沿用舊值與錯誤格式處理。
-- `test/widget_test.dart`：驗證歡迎畫面的「連線」／「使用模擬數據繼續」，進入模擬 HUD 後顯示車速 `25 km/h`，並可由左下選單看到「斷線」與開啟「模擬控制」。
+- `test/widget_test.dart`：驗證歡迎畫面標題、無 MAC 直連按鈕、「使用模擬數據繼續」預設隱藏且長按「連線」後才出現，進入模擬 HUD 後顯示車速 `25 km/h`，並可由左下選單看到「斷線」與開啟「模擬控制」。
 
 ## 延伸開發建議
 

@@ -9,7 +9,6 @@ import '../services/alert_notification_service.dart';
 import '../services/ble_radar_service.dart';
 import '../theme/hud_colors.dart';
 import '../widgets/map_card.dart';
-import '../widgets/ble_connection_banner.dart';
 import '../widgets/radar_view.dart';
 import '../widgets/simulation_sheet.dart';
 
@@ -257,7 +256,6 @@ class _RideHudScreenState extends State<RideHudScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            if (_isBle) const BleConnectionBanner(),
             _StatusBar(speed: _isBle ? null : _sim.bikeSpeed.round()),
             _AlertLines(alert: hasData ? alert : null),
             _PotholeAlertLine(text: hasData ? potholeAlertText : null),

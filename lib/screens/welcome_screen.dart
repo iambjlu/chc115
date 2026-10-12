@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../services/ble_radar_service.dart';
@@ -5,6 +7,7 @@ import '../theme/hud_colors.dart';
 import 'ride_hud_screen.dart';
 
 /// 啟動後的歡迎畫面：按「連線」搜尋並連上 AMB82 雷達模組後進入 HUD（藍牙數據），
+/// App 離開（進入背景）再回來時，會回到此畫面；離開前若已連線，回來後自動重新連線。
 /// 「使用模擬數據繼續」預設隱藏，長按「連線」按鈕才會顯示（不存檔，重開 App 即恢復隱藏）。
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
@@ -13,10 +16,48 @@ class WelcomeScreen extends StatefulWidget {
   State<WelcomeScreen> createState() => _WelcomeScreenState();
 }
 
-class _WelcomeScreenState extends State<WelcomeScreen> {
+class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserver {
   final _ble = BleRadarService.instance;
   String? _error;
   bool _showSimulation = false;
+  // 只有真正進入背景（paused）才算「離開」；下拉通知列、系統對話框只會 inactive，不處理。
+  bool _wasPaused = false;
+  bool _reconnectOnResume = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _wasPaused = true;
+      // 已連線就先乾淨斷線，回來時再重連（HUD 會因斷線自動關閉）。
+      _reconnectOnResume = _ble.status.value == BleRadarStatus.connected;
+      if (_reconnectOnResume) unawaited(_ble.disconnect());
+    } else if (state == AppLifecycleState.resumed && _wasPaused) {
+      _wasPaused = false;
+      _returnToWelcome();
+    }
+  }
+
+  void _returnToWelcome() {
+    if (!mounted) return;
+    // 關掉 HUD、選單、對話框等所有疊在歡迎頁上的畫面。
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    if (_reconnectOnResume) {
+      _reconnectOnResume = false;
+      unawaited(_connect());
+    }
+  }
 
   Future<void> _connect() async {
     setState(() => _error = null);
@@ -48,7 +89,10 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => RideHudScreen(mode: mode)),
     );
-    if (mode == RideHudMode.ble) await _ble.disconnect();
+    // 只在仍連線時才斷線，避免誤斷剛重新發起的連線。
+    if (mode == RideHudMode.ble && _ble.status.value == BleRadarStatus.connected) {
+      await _ble.disconnect();
+    }
   }
 
   @override

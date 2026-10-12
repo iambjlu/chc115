@@ -1,229 +1,133 @@
-#include <Arduino.h>
-// AmebaPro2 4.0.3 macros conflict with the C++ headers used by SSCMA.
-#ifdef min
-#undef min
-#endif
-#ifdef max
-#undef max
-#endif
-// Arduino.h maps printf to dbg_printf, which breaks <cstdio>/<ostream> pulled in by ArduinoJson.
-#ifdef printf
-#undef printf
-#endif
-#ifdef sprintf
-#undef sprintf
-#endif
-extern "C" int printf(const char *, ...);
-extern "C" int sprintf(char *, const char *, ...);
-#include <Seeed_Arduino_SSCMA.h>
+/*
+
+
+Example guide:
+https://www.amebaiot.com/en/amebapro2-amb82-mini-arduino-ble-uart-service/
+*/
+
+
 #include "BLEDevice.h"
+#include "gap_le.h"
+#include "gap_msg.h"
 
-// ---- BLE：把雷達數據以 Notify 傳給 Flutter App（chc115）----
-// App 會掃描 BLE_ADV_NAME 並訂閱 BLE_TX_UUID，每筆資料為一行 ASCII（7 欄）：
-//   左後距離,右後距離,左後逼近,右後逼近,左前坑,正前坑,右前坑
-//   距離：1=遠 2=中 3=近；逼近/坑：1=有 0=沒有；任何欄位 9=錯誤
-//   例：3,1,1,0,1,0,1
-#define BLE_ADV_NAME     "AMB82-Radar"
-#define BLE_SERVICE_UUID "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
-#define BLE_TX_UUID      "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
-#define BLE_BUF_SIZE     64
-#define BLE_SEND_MS      1000
 
-#if !defined(SERIAL_ONE_UART_MODIFIABLE_BAUD_RATE) || SERIAL_ONE_UART_MODIFIABLE_BAUD_RATE != 1
-#error "AmebaPro2 4.0.3 needs the supplied platform.local.txt setting. Restart Arduino IDE after installing it."
-#endif
+#define UART_SERVICE_UUID      "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
+#define CHARACTERISTIC_UUID_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
+#define CHARACTERISTIC_UUID_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
 
-void printHelp();
-void connectGrove();
-void inferOnce();
-void printBleMac();
 
-SSCMA ai;
-bool connected = false;
-bool serialStarted = false;
-bool needsWarmup = true;
-bool continuous = false;
-unsigned long lastRun = 0;
-unsigned long frameNumber = 0;
+#define STRING_BUF_SIZE 100
 
-BLEService radarService(BLE_SERVICE_UUID);
-BLECharacteristic radarTx(BLE_TX_UUID);
-BLEAdvertData bleAdv;
-BLEAdvertData bleScan;
-bool bleNotifyOn = false;
-uint8_t bleConnId = 0;
-unsigned long lastBleSend = 0;
-unsigned long simTick = 0;
 
-void bleNotifyCallback(BLECharacteristic *chr, uint8_t connID, uint16_t cccd) {
-  bleNotifyOn = (cccd & GATT_CLIENT_CHAR_CONFIG_NOTIFY) != 0;
-  bleConnId = connID;
-  Serial.print("BLE_NOTIFY ");
-  Serial.println(bleNotifyOn ? "ON" : "OFF");
+BLEService UartService(UART_SERVICE_UUID);
+BLECharacteristic Rx(CHARACTERISTIC_UUID_RX);
+BLECharacteristic Tx(CHARACTERISTIC_UUID_TX);
+BLEAdvertData advdata;
+BLEAdvertData scndata;
+volatile bool notify = false;
+volatile uint8_t notifyConnection = 0;
+
+
+void readCB (BLECharacteristic* chr, uint8_t connID) {
+  printf("Characteristic %s read by connection %d \n", chr->getUUID().str(), connID);
 }
 
-void printBleMac() {
-  uint8_t addr[GAP_BD_ADDR_LEN] = {0};
-  BLE.getLocalAddr(addr);
-  char mac[18];
-  snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
-          addr[5], addr[4], addr[3], addr[2], addr[1], addr[0]);
-  Serial.print("BLE_MAC=");
-  Serial.println(mac);
+
+void writeCB (BLECharacteristic* chr, uint8_t connID) {
+  printf("Characteristic %s write by connection %d :\n", chr->getUUID().str(), connID);
+  if (chr->getDataLen() > 0) {
+    Serial.print("Received string: ");
+    Serial.print(chr->readString());
+    Serial.println();
+  }
 }
 
-void setupBle() {
-  bleAdv.addFlags(GAP_ADTYPE_FLAGS_LIMITED | GAP_ADTYPE_FLAGS_BREDR_NOT_SUPPORTED);
-  bleAdv.addCompleteName(BLE_ADV_NAME);
-  bleScan.addCompleteServices(BLEUUID(BLE_SERVICE_UUID));
 
-  radarTx.setReadProperty(true);
-  radarTx.setNotifyProperty(true);
-  radarTx.setBufferLen(BLE_BUF_SIZE);
-  radarTx.setCCCDCallback(bleNotifyCallback);
-  radarService.addCharacteristic(radarTx);
-
-  BLE.init();
-  BLE.configAdvert()->setAdvData(bleAdv);
-  BLE.configAdvert()->setScanRspData(bleScan);
-  BLE.configServer(1);
-  BLE.addService(radarService);
-  Serial.println("BLE_STARTING");
-  BLE.beginPeripheral();
-  printBleMac();
-  Serial.println("BLE_ADVERTISING name=" BLE_ADV_NAME);
-}
-
-// 模擬數據：每秒推進一步，12 步一個循環，涵蓋各種 HUD 狀態。
-// 之後接上真實感測（SSCMA 偵測框換算距離等）時，只要改這個函式。
-void sendSimulatedRadar() {
-  const unsigned long t = simTick++ % 12;
-  const int leftDist = (t < 4) ? 1 : (t < 8) ? 2 : 3;      // 遠 -> 中 -> 近
-  const int rightDist = 3 - (int)((t / 3) % 3);             // 近 -> 中 -> 遠
-  const int leftApproach = (leftDist == 3) ? 1 : 0;
-  const int rightApproach = (rightDist == 3) ? 1 : 0;
-  const int potholeL = (t == 3) ? 1 : 0;
-  const int potholeC = (t == 6 || t == 7) ? 1 : 0;
-  const int potholeR = (t == 10) ? 1 : 0;
-
-  char line[BLE_BUF_SIZE];
-  snprintf(line, sizeof(line), "%d,%d,%d,%d,%d,%d,%d",
-          leftDist, rightDist, leftApproach, rightApproach,
-          potholeL, potholeC, potholeR);
-  radarTx.writeString(line);
-  radarTx.notify(bleConnId);
-  Serial.print("BLE_SEND ");
-  Serial.println(line);
-}
-
-void printHelp() {
-  Serial.println("BLE: m=print MAC (after BLE startup)");
-  Serial.println("Grove SSCMA UART: i=connect, t=infer once, r=run, s=stop, h=help");
-  Serial.println("PC=115200; Grove Serial1=921600; AMB82 TX21->RXD, RX22<-TXD.");
-}
-
-void connectGrove() {
-  continuous = false;
-  needsWarmup = true;
-  if (!serialStarted) {
-    connected = ai.begin(&Serial1, -1, 921600, 2);
-    serialStarted = true;
+void notifCB (BLECharacteristic* chr, uint8_t connID, uint16_t cccd) {
+  notifyConnection = connID;
+  if (cccd & GATT_CLIENT_CHAR_CONFIG_NOTIFY) {
+    printf("Notifications enabled on Characteristic %s for connection %d \n", chr->getUUID().str(), connID);
+    notify = true;
   } else {
-    // begin() would initialize the same Ameba UART pins again. Re-query
-    // device identity instead, including after an earlier failed handshake.
-    connected = ai.ID(false) && ai.name(false);
+    printf("Notifications disabled on Characteristic %s for connection %d \n", chr->getUUID().str(), connID);
+    notify = false;
   }
-  if (!connected) {
-    Serial.println("SSCMA_CONNECT_FAILED: check Grove power/UART; send i to retry.");
-    return;
-  }
-  Serial.print("SSCMA_CONNECTED id=");
-  Serial.print(ai.ID());
-  Serial.print(" name=");
-  Serial.println(ai.name());
 }
 
-void inferOnce() {
-  if (!connected) {
-    Serial.println("NOT_CONNECTED: send i first.");
-    return;
-  }
-  if (needsWarmup) {
-    Serial.println("WARMUP: acquiring 10 frames before reporting detections.");
-    for (int frame = 0; frame < 10; ++frame) {
-      const int warmupResult = ai.invoke(1, true, false);
-      if (warmupResult != CMD_OK) {
-        continuous = false;
-        Serial.print("WARMUP_FAILED library_code=");
-        Serial.println(warmupResult);
-        return;
-      }
-      delay(50);
-    }
-    needsWarmup = false;
-  }
-  // In installed SSCMA 1.0.3 the second argument also sets RESULT_ONLY.
-  // true produces AT+INVOKE=1,0,1 (one inference, results only, no JPEG).
-  ai.boxes().clear();
-  const int result = ai.invoke(1, true, false);
-  if (result != CMD_OK) {
-    continuous = false;
-    Serial.print("INFERENCE_FAILED library_code=");
-    Serial.println(result);
-    Serial.println("Stopped. This code is from SSCMA; it may hide a device error.");
-    return;
-  }
-  ++frameNumber;
-  Serial.print("INFERENCE_OK frame="); Serial.print(frameNumber);
-  Serial.print(" boxes="); Serial.print((unsigned int)ai.boxes().size());
-  Serial.print(" preprocess_ms="); Serial.print(ai.perf().prepocess);
-  Serial.print(" inference_ms="); Serial.print(ai.perf().inference);
-  Serial.print(" postprocess_ms="); Serial.println(ai.perf().postprocess);
-  for (size_t index = 0; index < ai.boxes().size(); ++index) {
-    const boxes_t &box = ai.boxes()[index];
-    Serial.print("BOX target="); Serial.print(box.target);
-    Serial.print(" score="); Serial.print(box.score);
-    Serial.print(" x="); Serial.print(box.x);
-    Serial.print(" y="); Serial.print(box.y);
-    Serial.print(" w="); Serial.print(box.w);
-    Serial.print(" h="); Serial.println(box.h);
-  }
-  if (ai.boxes().empty()) Serial.println("NO_DETECTIONS: inference completed with no boxes.");
-}
 
 void setup() {
   Serial.begin(115200);
   delay(2000);
-  printHelp();
-  setupBle();
-  connectGrove();
+  Serial.println("BLE_SIMULATED_7_FIELDS_1HZ_NO_GROVE");
+
+
+  advdata.addFlags(GAP_ADTYPE_FLAGS_GENERAL | GAP_ADTYPE_FLAGS_BREDR_NOT_SUPPORTED);
+  advdata.addCompleteName("AMB82-Radar");
+  scndata.addCompleteServices(BLEUUID(UART_SERVICE_UUID));
+
+
+  Rx.setWriteProperty(true);
+  Rx.setWritePermissions(GATT_PERM_WRITE);
+  Rx.setWriteCallback(writeCB);
+  Rx.setBufferLen(STRING_BUF_SIZE);
+  Tx.setReadProperty(true);
+  Tx.setReadPermissions(GATT_PERM_READ);
+  Tx.setReadCallback(readCB);
+  Tx.setNotifyProperty(true);
+  Tx.setCCCDCallback(notifCB);
+  Tx.setBufferLen(STRING_BUF_SIZE);
+
+
+  UartService.addCharacteristic(Rx);
+  UartService.addCharacteristic(Tx);
+
+
+  BLE.init();
+  BLE.setDeviceName("AMB82-Radar");
+  BLE.configAdvert()->setAdvData(advdata);
+  BLE.configAdvert()->setScanRspData(scndata);
+  BLE.configServer(1);
+  BLE.addService(UartService);
+
+
+  BLE.beginPeripheral();
+  uint8_t a[6] = {0};
+  BLE.getLocalAddr(a);
+  char mac[18];
+  snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X", a[5], a[4], a[3], a[2], a[1], a[0]);
+  Serial.print("BLE_MAC="); Serial.println(mac);
 }
+
+
+void sendSimulatedRadar() {
+  static unsigned long tick = 0;
+  const unsigned long t = tick++ % 12;
+  const int left = t < 4 ? 1 : (t < 8 ? 2 : 3);
+  const int right = 3 - (int)((t / 3) % 3);
+  char line[32];
+  snprintf(line, sizeof(line), "%d,%d,%d,%d,%d,%d,%d",
+          left, right, left == 3 ? 1 : 0, right == 3 ? 1 : 0,
+          t == 3 ? 1 : 0, (t == 6 || t == 7) ? 1 : 0, t == 10 ? 1 : 0);
+  Tx.writeString(line);
+  Tx.notify(notifyConnection);
+  Serial.print("BLE_SEND "); Serial.println(line);
+}
+
 
 void loop() {
-  if (Serial.available()) {
-    const int key = Serial.read();
-    switch (key) {
-      case 'i': connectGrove(); break;
-      case 't': continuous = false; inferOnce(); break;
-      case 'r':
-        if (connected) { continuous = true; lastRun = millis() - 1000; }
-        else Serial.println("NOT_CONNECTED: send i first.");
-            break;
-      case 's': continuous = false; Serial.println("STOPPED"); break;
-      case 'h': printHelp(); break;
-      case 'm': printBleMac(); break;
-    }
-  }
-  if (bleNotifyOn && millis() - lastBleSend >= BLE_SEND_MS) {
-    lastBleSend = millis();
+  static unsigned long lastSend = 0;
+  if (!BLE.connected(0)) notify = false;
+  if (notify && BLE.connected(notifyConnection) && millis() - lastSend >= 1000) {
+    lastSend = millis();
     sendSimulatedRadar();
   }
-  if (continuous && millis() - lastRun >= 1000) {
-    inferOnce();
-    lastRun = millis();
+  static unsigned long last = 0;
+  if (millis() - last >= 2000) {
+    last = millis();
+    T_GAP_DEV_STATE state = {0};
+    le_get_gap_param(GAP_PARAM_DEV_STATE, &state);
+    Serial.print("MINIMAL adv="); Serial.print((int)state.gap_adv_state);
+    Serial.print(" connected="); Serial.println(BLE.connected(0));
   }
-  delay(1);
+  delay(10);
 }
-
-
-

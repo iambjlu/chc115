@@ -179,6 +179,8 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   `AMB82-Radar`，單一 Notify characteristic）。App 訂閱後，`loop()` 每秒呼叫
   `sendSimulatedRadar()` 送出一筆模擬數據（12 步一個循環，涵蓋左側遠→中→近、
   右側近→遠、左前／正前／右前坑洞等狀態），格式見 `BleRadarService`。
+  開機時序列埠印出 `BLE_STARTING`、`BLE_MAC=…`（`printBleMac()`，輸入 `m` 可重印），
+  供 App 的 MAC 直連（`BleRadarService.deviceMac`）核對。
   草稿放在 `AMB82_Grove_SSCMA/` 子資料夾（Arduino 要求資料夾與草稿同名），
   並加了 `printf` 巨集與前置宣告的相容處理；工具安裝與 arduino-cli 編譯／上傳
   指令見 `arduino/note.md`。

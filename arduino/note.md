@@ -46,7 +46,8 @@ arduino-cli upload  --fqbn $FQBN -p /dev/cu.usbserial-10 AMB82_Grove_SSCMA
 arduino-cli monitor -p /dev/cu.usbserial-10 -c baudrate=115200
 ```
 
-正常會看到 `BLE_ADVERTISING name=AMB82-Radar`；手機連上後出現 `BLE_NOTIFY ON` 與每秒一行 `BLE_SEND 1,3,0,1,0,0,0`。
+開機後依序會印出 `BLE_STARTING`、`BLE_MAC=XX:XX:XX:XX:XX:XX`、`BLE_ADVERTISING name=AMB82-Radar`。序列埠輸入 `m` 可隨時再印一次 MAC（App 的「以 MAC 直接連線」要填這個值，目前 App 內建 `00:E0:4C:0F:60:67`，換板子時需改 `BleRadarService.deviceMac`）。
+手機連上後會出現 `BLE_NOTIFY ON`；手機連上後出現 `BLE_NOTIFY ON` 與每秒一行 `BLE_SEND 1,3,0,1,0,0,0`。
 
 ## App 接收格式（`App接收格式.xlsx`）
 

@@ -36,6 +36,7 @@ extern "C" int sprintf(char *, const char *, ...);
 void printHelp();
 void connectGrove();
 void inferOnce();
+void printBleMac();
 
 SSCMA ai;
 bool connected = false;
@@ -61,6 +62,16 @@ void bleNotifyCallback(BLECharacteristic *chr, uint8_t connID, uint16_t cccd) {
   Serial.println(bleNotifyOn ? "ON" : "OFF");
 }
 
+void printBleMac() {
+  uint8_t addr[GAP_BD_ADDR_LEN] = {0};
+  BLE.getLocalAddr(addr);
+  char mac[18];
+  snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+          addr[5], addr[4], addr[3], addr[2], addr[1], addr[0]);
+  Serial.print("BLE_MAC=");
+  Serial.println(mac);
+}
+
 void setupBle() {
   bleAdv.addFlags(GAP_ADTYPE_FLAGS_LIMITED | GAP_ADTYPE_FLAGS_BREDR_NOT_SUPPORTED);
   bleAdv.addCompleteName(BLE_ADV_NAME);
@@ -77,7 +88,9 @@ void setupBle() {
   BLE.configAdvert()->setScanRspData(bleScan);
   BLE.configServer(1);
   BLE.addService(radarService);
+  Serial.println("BLE_STARTING");
   BLE.beginPeripheral();
+  printBleMac();
   Serial.println("BLE_ADVERTISING name=" BLE_ADV_NAME);
 }
 
@@ -95,8 +108,8 @@ void sendSimulatedRadar() {
 
   char line[BLE_BUF_SIZE];
   snprintf(line, sizeof(line), "%d,%d,%d,%d,%d,%d,%d",
-           leftDist, rightDist, leftApproach, rightApproach,
-           potholeL, potholeC, potholeR);
+          leftDist, rightDist, leftApproach, rightApproach,
+          potholeL, potholeC, potholeR);
   radarTx.writeString(line);
   radarTx.notify(bleConnId);
   Serial.print("BLE_SEND ");
@@ -104,6 +117,7 @@ void sendSimulatedRadar() {
 }
 
 void printHelp() {
+  Serial.println("BLE: m=print MAC (after BLE startup)");
   Serial.println("Grove SSCMA UART: i=connect, t=infer once, r=run, s=stop, h=help");
   Serial.println("PC=115200; Grove Serial1=921600; AMB82 TX21->RXD, RX22<-TXD.");
 }
@@ -194,9 +208,10 @@ void loop() {
       case 'r':
         if (connected) { continuous = true; lastRun = millis() - 1000; }
         else Serial.println("NOT_CONNECTED: send i first.");
-        break;
+            break;
       case 's': continuous = false; Serial.println("STOPPED"); break;
       case 'h': printHelp(); break;
+      case 'm': printBleMac(); break;
     }
   }
   if (bleNotifyOn && millis() - lastBleSend >= BLE_SEND_MS) {
@@ -209,3 +224,6 @@ void loop() {
   }
   delay(1);
 }
+
+
+

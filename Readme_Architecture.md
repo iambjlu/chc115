@@ -116,6 +116,8 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   - 左下角為 `PopupMenuButton` 選單（≡ 圖示的 FAB）：「斷線」（藍牙模式會
     先 `BleRadarService.disconnect()`，再回到歡迎畫面）；僅模擬模式額外有
     「模擬控制」項目以開啟 `SimulationSheet`。
+  - Android 上 `_StatusBar` 之上固定多一個 48dp 的 `SizedBox`，避免 heads-up
+    系統通知橫幅蓋住車速讀數（iOS 不用系統通知，不需要）。
   - 畫面內含三個私有元件：`_StatusBar`（車速讀數）、`_AlertLines`
     （後方車輛逼近警示，一行 `Icon(Icons.warning_rounded)` + 粗體文字）
     與 `_PotholeAlertLine`（坑洞提示文字，依左前/正前/右前順序列出

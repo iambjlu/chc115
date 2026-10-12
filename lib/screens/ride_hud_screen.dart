@@ -256,6 +256,8 @@ class _RideHudScreenState extends State<RideHudScreen> {
       body: SafeArea(
         child: Column(
           children: [
+            // Android 的 heads-up 通知會蓋住最上方，預留空間避免擋到車速。
+            if (Platform.isAndroid) const SizedBox(height: 48),
             _StatusBar(speed: _isBle ? null : _sim.bikeSpeed.round()),
             _AlertLines(alert: hasData ? alert : null),
             _PotholeAlertLine(text: hasData ? potholeAlertText : null),

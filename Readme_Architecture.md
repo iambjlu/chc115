@@ -81,6 +81,11 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   「使用模擬數據繼續」按鈕預設隱藏，長按「連線」按鈕才會顯示（僅存在
   `_showSimulation` 狀態，不持久化，重開 App 即恢復隱藏），按下後 push
   `RideHudScreen(mode: simulation)`。
+  實作 `WidgetsBindingObserver` 監聽 App lifecycle：App 進入背景（`paused`）
+  時若已連線會乾淨斷線、標記 `_reconnectOnResume`；回到前景（`resumed`）
+  時以 `popUntil(isFirst)` 關閉所有疊層後回到歡迎頁首頁，若有標記則自動
+  重新呼叫 `_connect()`。下拉通知列、系統對話框只會觸發 `inactive`，不會
+  處理。
 
 - **`RideHudScreen`**：唯一的頁面，也是狀態持有者。
   - 內部持有 `SimulationValues _sim`（初始為 `demo`）。
@@ -179,17 +184,18 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
 
 ### arduino（板子端）
 
-- **`AMB82_Grove_SSCMA.ino`**：除了原本透過 Grove UART 讀 SSCMA 偵測結果
-  外，另以 AmebaPro2 的 `BLEDevice.h` 建立 BLE Peripheral（廣播名稱
-  `AMB82-Radar`，單一 Notify characteristic）。App 訂閱後，`loop()` 每秒呼叫
+- **`AMB82_Grove_SSCMA.ino`**：純 BLE UART 服務範例（參考 AmebaPro2 官方
+  文件），不再包含 SSCMA 感測器整合。以 `BLEDevice.h` 建立 BLE Peripheral
+  （廣播名稱 `AMB82-Radar`，包含 RX／TX 兩個 characteristic，僅 TX 開啟 Notify）。
+  App 訂閱 TX characteristic 後，`loop()` 在 Notify 開啟且已連線時每秒呼叫
   `sendSimulatedRadar()` 送出一筆模擬數據（12 步一個循環，涵蓋左側遠→中→近、
   右側近→遠、左前／正前／右前坑洞等狀態），格式見 `BleRadarService`。
-  開機時序列埠印出 `BLE_STARTING`、`BLE_MAC=…`（`printBleMac()`，輸入 `m` 可重印），
-  供核對 `BleRadarService.deviceMac`（掃描時也會以此 MAC 比對裝置）。
-  草稿放在 `AMB82_Grove_SSCMA/` 子資料夾（Arduino 要求資料夾與草稿同名），
-  並加了 `printf` 巨集與前置宣告的相容處理；工具安裝與 arduino-cli 編譯／上傳
-  指令見 `arduino/note.md`。
-  之後要換成真實數據，只需改 `sendSimulatedRadar()` 內的取值來源。
+  開機時序列埠印出 `BLE_SIMULATED_7_FIELDS_1HZ_NO_GROVE`、`BLE_MAC=…`（輸入 `m`
+  目前不支援重印，改為開機自動印出），供核對
+  `BleRadarService.deviceMac`（掃描時也會以此 MAC 比對裝置）。草稿放在
+  `AMB82_Grove_SSCMA/` 子資料夾（Arduino 要求資料夾與草稿同名）；工具安裝與
+  arduino-cli 編譯／上傳指令見 `arduino/note.md`。若要換成真實數據，只需改
+  `sendSimulatedRadar()` 內的取值來源。
 
 ### widgets（UI 元件）
 

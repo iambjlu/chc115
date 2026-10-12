@@ -74,7 +74,8 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
 
 - **`WelcomeScreen`**：App 首頁（`MaterialApp.home`）。「連線」按鈕呼叫
   `BleRadarService.connect()`，成功則 push `RideHudScreen(mode: ble)`，
-  失敗在按鈕下方顯示找不到 `AMB82-Radar` 的錯誤文字；按鈕依
+  失敗時除了在按鈕下方顯示錯誤文字，也用 `AlertDialog`（可選取文字）顯示
+  `BleRadarService.lastError` 的確切原因（含失敗階段與例外內容）；按鈕依
   `BleRadarService.status` 顯示搜尋中／連線中並停用。按鈕下方的小字
   「使用模擬數據繼續」則 push `RideHudScreen(mode: simulation)`。
 
@@ -165,7 +166,9 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   由 `parse(line, base)` 轉成 `SimulationValues`
   從 `values` Stream 推送；`status`（`BleRadarStatus`：idle／scanning／
   connecting／connected）為 `ValueNotifier` 供 UI 顯示。連線斷開會自動清理
-  回到 idle。`connect()` 需帶 `License.nonprofit`（`flutter_blue_plus` 2.x
+  回到 idle。每個階段（藍牙檢查、掃描、連線並訂閱）的失敗原因與堆疊都會
+  `debugPrint('[BLE] …')`，並記入 `lastError`。連線遇到 Android GATT error 133
+  時會斷開、清除 GATT 快取、等 1 秒後自動重試，最多 3 次。`connect()` 需帶 `License.nonprofit`（`flutter_blue_plus` 2.x
   的授權聲明）。Android 需 `BLUETOOTH_SCAN`／`BLUETOOTH_CONNECT`，iOS 需
   `NSBluetoothAlwaysUsageDescription`。
 

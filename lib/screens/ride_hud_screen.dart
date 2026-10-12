@@ -9,6 +9,7 @@ import '../services/alert_notification_service.dart';
 import '../services/ble_radar_service.dart';
 import '../theme/hud_colors.dart';
 import '../widgets/map_card.dart';
+import '../widgets/ble_connection_banner.dart';
 import '../widgets/radar_view.dart';
 import '../widgets/simulation_sheet.dart';
 
@@ -28,7 +29,7 @@ class RideHudScreen extends StatefulWidget {
 
 class _RideHudScreenState extends State<RideHudScreen> {
   late SimulationValues _sim = widget.mode == RideHudMode.ble
-      ? SimulationValues.empty
+      ? BleRadarService.instance.latest
       : SimulationValues.demo;
   StreamSubscription<SimulationValues>? _bleSub;
 
@@ -38,6 +39,7 @@ class _RideHudScreenState extends State<RideHudScreen> {
   void initState() {
     super.initState();
     if (_isBle) {
+      BleRadarService.instance.dataStatus.addListener(_onDataStatus);
       // 藍牙收到的數據與模擬面板走同一條路徑（含通知比對）。
       _bleSub = BleRadarService.instance.values.listen(
         (v) => _applySimulationValues(v.copyWith(bikeSpeed: _sim.bikeSpeed)),
@@ -50,8 +52,15 @@ class _RideHudScreenState extends State<RideHudScreen> {
   @override
   void dispose() {
     _bleSub?.cancel();
-    if (_isBle) BleRadarService.instance.status.removeListener(_onBleStatus);
+    if (_isBle) {
+      BleRadarService.instance.status.removeListener(_onBleStatus);
+      BleRadarService.instance.dataStatus.removeListener(_onDataStatus);
+    }
     super.dispose();
+  }
+
+  void _onDataStatus() {
+    if (mounted) setState(() {});
   }
 
   void _onBleStatus() {
@@ -61,8 +70,11 @@ class _RideHudScreenState extends State<RideHudScreen> {
   }
 
   Future<void> _disconnect() async {
-    if (_isBle) await BleRadarService.instance.disconnect();
-    if (mounted) Navigator.of(context).maybePop();
+    if (_isBle) {
+      await BleRadarService.instance.disconnect();
+    } else if (mounted) {
+      Navigator.of(context).maybePop();
+    }
   }
 
   List<VehicleThreat> get _threats => [
@@ -209,6 +221,7 @@ class _RideHudScreenState extends State<RideHudScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final hasData = !_isBle || BleRadarService.instance.dataStatus.value == RadarDataStatus.receiving;
     final threats = _threats;
     final alert = _activeAlert;
     final potholeAlertText = _potholeAlertText;
@@ -244,9 +257,10 @@ class _RideHudScreenState extends State<RideHudScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            _StatusBar(speed: _sim.bikeSpeed.round()),
-            _AlertLines(alert: alert),
-            _PotholeAlertLine(text: potholeAlertText),
+            if (_isBle) const BleConnectionBanner(),
+            _StatusBar(speed: _isBle ? null : _sim.bikeSpeed.round()),
+            _AlertLines(alert: hasData ? alert : null),
+            _PotholeAlertLine(text: hasData ? potholeAlertText : null),
             const SizedBox(height: 14),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16),
@@ -254,7 +268,9 @@ class _RideHudScreenState extends State<RideHudScreen> {
             ),
             const SizedBox(height: 16),
             Expanded(
-              child: RadarView(
+              child: !hasData
+                  ? const Center(child: Text('尚無有效資料，雷達暫停顯示'))
+                  : RadarView(
                 threats: threats,
                 potholeFrontLeft: _sim.potholeFrontLeft,
                 potholeFrontCenter: _sim.potholeFrontCenter,
@@ -273,7 +289,7 @@ enum _HudMenu { simulation, disconnect }
 class _StatusBar extends StatelessWidget {
   const _StatusBar({required this.speed});
 
-  final int speed;
+  final int? speed;
 
   @override
   Widget build(BuildContext context) {
@@ -286,7 +302,7 @@ class _StatusBar extends StatelessWidget {
         textBaseline: TextBaseline.alphabetic,
         children: [
           Text(
-            '$speed',
+            speed?.toString() ?? '—',
             style: textTheme.displayMedium?.copyWith(
               fontWeight: FontWeight.w800,
               fontFeatures: const [FontFeature.tabularFigures()],

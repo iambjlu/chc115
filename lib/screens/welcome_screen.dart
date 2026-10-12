@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../services/ble_radar_service.dart';
@@ -17,21 +18,37 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   final _ble = BleRadarService.instance;
   String? _error;
 
-  Future<void> _connect() async {
+  Future<void> _connect({bool direct = false}) async {
     setState(() => _error = null);
-    await _ble.connect();
+    await _ble.connect(direct: direct);
     if (!mounted) return;
     if (_ble.status.value == BleRadarStatus.connected) {
       await _openHud(RideHudMode.ble);
     } else {
-      setState(() => _error = '找不到 ${BleRadarService.deviceName}，請確認板子已通電、藍牙已開啟後重試');
+      final error = _ble.lastError.value ?? '連線未完成，請重試';
+      setState(() => _error = error);
+      await _showError(error);
     }
   }
 
-  Future<void> _openHud(RideHudMode mode) {
-    return Navigator.of(context).push(
+  Future<void> _showError(String error) {
+    return showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('藍牙連線失敗'),
+        content: SingleChildScrollView(child: SelectableText(error)),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('確定')),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openHud(RideHudMode mode) async {
+    await Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => RideHudScreen(mode: mode)),
     );
+    if (mode == RideHudMode.ble) await _ble.disconnect();
   }
 
   @override
@@ -53,7 +70,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                   const SizedBox(height: 28),
                   Text('騎乘後方雷達', style: textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
                   const SizedBox(height: 8),
-                  Text('連線 AMB82 雷達模組，即時掌握後方來車與前方坑洞',
+                  Text('連線 AMB82-Radar，接收板子模擬資料。\n目前尚非真實人物、車輛或坑洞辨識。',
                       textAlign: TextAlign.center,
                       style: textTheme.bodyMedium?.copyWith(color: HudColors.inkDim)),
                   const Spacer(flex: 3),
@@ -61,7 +78,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                     width: double.infinity,
                     height: 52,
                     child: FilledButton.icon(
-                      onPressed: busy ? null : _connect,
+                      onPressed: busy ? null : () => _connect(),
                       icon: busy
                           ? const SizedBox(
                               width: 18,
@@ -81,13 +98,18 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                   ),
                   const SizedBox(height: 12),
                   SizedBox(
-                    height: 44,
+                    height: 100,
                     child: _error == null
                         ? null
                         : Text(_error!,
                             textAlign: TextAlign.center,
                             style: textTheme.bodySmall?.copyWith(color: HudColors.danger)),
                   ),
+                  if (Platform.isAndroid)
+                    TextButton(
+                      onPressed: busy ? null : () => _connect(direct: true),
+                      child: const Text('以 MAC 直接連線\n${BleRadarService.deviceMac}', textAlign: TextAlign.center),
+                    ),
                   TextButton(
                     onPressed: busy ? null : () => _openHud(RideHudMode.simulation),
                     child: Text('使用模擬數據繼續',

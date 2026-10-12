@@ -27,10 +27,12 @@ class RideHudScreen extends StatefulWidget {
 }
 
 class _RideHudScreenState extends State<RideHudScreen> {
-  late SimulationValues _sim = widget.mode == RideHudMode.ble
-      ? BleRadarService.instance.latest
-      : SimulationValues.demo;
+  late SimulationValues _sim =
+      widget.mode == RideHudMode.ble
+          ? BleRadarService.instance.latest
+          : SimulationValues.demo;
   StreamSubscription<SimulationValues>? _bleSub;
+  ScaffoldMessengerState? _messenger;
 
   bool get _isBle => widget.mode == RideHudMode.ble;
 
@@ -49,7 +51,15 @@ class _RideHudScreenState extends State<RideHudScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _messenger = ScaffoldMessenger.maybeOf(context);
+  }
+
+  @override
   void dispose() {
+    // 保險：離開此頁時一併撤銷 SnackBar（它掛在全域 ScaffoldMessenger 上，不會隨頁面消失）。
+    _messenger?.clearSnackBars();
     _bleSub?.cancel();
     if (_isBle) {
       BleRadarService.instance.status.removeListener(_onBleStatus);
@@ -63,7 +73,8 @@ class _RideHudScreenState extends State<RideHudScreen> {
   }
 
   void _onBleStatus() {
-    if (BleRadarService.instance.status.value == BleRadarStatus.idle && mounted) {
+    if (BleRadarService.instance.status.value == BleRadarStatus.idle &&
+        mounted) {
       Navigator.of(context).maybePop();
     }
   }
@@ -116,10 +127,11 @@ class _RideHudScreenState extends State<RideHudScreen> {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (context) => SimulationSheet(
-        initialValues: _sim,
-        onChanged: _applySimulationValues,
-      ),
+      builder:
+          (context) => SimulationSheet(
+            initialValues: _sim,
+            onChanged: _applySimulationValues,
+          ),
     );
   }
 
@@ -193,7 +205,11 @@ class _RideHudScreenState extends State<RideHudScreen> {
     required String title,
     required String body,
   }) {
-    AlertNotificationService.instance.notifyHazard(category: category, title: title, body: body);
+    AlertNotificationService.instance.notifyHazard(
+      category: category,
+      title: title,
+      body: body,
+    );
     if (Platform.isIOS) {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
@@ -208,7 +224,10 @@ class _RideHudScreenState extends State<RideHudScreen> {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
                 Text(body, style: const TextStyle(color: Colors.white)),
               ],
@@ -220,64 +239,81 @@ class _RideHudScreenState extends State<RideHudScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final hasData = !_isBle || BleRadarService.instance.dataStatus.value == RadarDataStatus.receiving;
+    final hasData =
+        !_isBle ||
+        BleRadarService.instance.dataStatus.value == RadarDataStatus.receiving;
     final threats = _threats;
     final alert = _activeAlert;
     final potholeAlertText = _potholeAlertText;
 
-    return Scaffold(
-      backgroundColor: HudColors.surface,
-      floatingActionButton: PopupMenuButton<_HudMenu>(
-        tooltip: '選單',
-        position: PopupMenuPosition.over,
-        onSelected: (item) => switch (item) {
-          _HudMenu.simulation => _openSimulationSheet(),
-          _HudMenu.disconnect => _disconnect(),
-        },
-        itemBuilder: (context) => [
-          if (!_isBle)
-            const PopupMenuItem(
-              value: _HudMenu.simulation,
-              child: ListTile(leading: Icon(Icons.tune_rounded), title: Text('模擬控制')),
+    // 一開始返回歡迎畫面（含手勢返回、斷線）就立刻撤銷 SnackBar，不等轉場動畫結束。
+    return PopScope(
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) _messenger?.clearSnackBars();
+      },
+      child: Scaffold(
+        backgroundColor: HudColors.surface,
+        floatingActionButton: PopupMenuButton<_HudMenu>(
+          tooltip: '選單',
+          position: PopupMenuPosition.over,
+          onSelected:
+              (item) => switch (item) {
+                _HudMenu.simulation => _openSimulationSheet(),
+                _HudMenu.disconnect => _disconnect(),
+              },
+          itemBuilder:
+              (context) => [
+                if (!_isBle)
+                  const PopupMenuItem(
+                    value: _HudMenu.simulation,
+                    child: ListTile(
+                      leading: Icon(Icons.tune_rounded),
+                      title: Text('模擬控制'),
+                    ),
+                  ),
+                const PopupMenuItem(
+                  value: _HudMenu.disconnect,
+                  child: ListTile(
+                    leading: Icon(Icons.bluetooth_disabled_rounded),
+                    title: Text('斷線'),
+                  ),
+                ),
+              ],
+          child: IgnorePointer(
+            child: FloatingActionButton(
+              onPressed: () {},
+              child: const Icon(Icons.menu_rounded),
             ),
-          const PopupMenuItem(
-            value: _HudMenu.disconnect,
-            child: ListTile(leading: Icon(Icons.bluetooth_disabled_rounded), title: Text('斷線')),
-          ),
-        ],
-        child: IgnorePointer(
-          child: FloatingActionButton(
-            onPressed: () {},
-            child: const Icon(Icons.menu_rounded),
           ),
         ),
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Android 的 heads-up 通知會蓋住最上方，預留空間避免擋到車速。
-            if (Platform.isAndroid) const SizedBox(height: 48),
-            _StatusBar(speed: _isBle ? null : _sim.bikeSpeed.round()),
-            _AlertLines(alert: hasData ? alert : null),
-            _PotholeAlertLine(text: hasData ? potholeAlertText : null),
-            const SizedBox(height: 14),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: MapCard(),
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: !hasData
-                  ? const Center(child: Text('尚無有效資料，雷達暫停顯示'))
-                  : RadarView(
-                threats: threats,
-                potholeFrontLeft: _sim.potholeFrontLeft,
-                potholeFrontCenter: _sim.potholeFrontCenter,
-                potholeFrontRight: _sim.potholeFrontRight,
+        floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
+        body: SafeArea(
+          child: Column(
+            children: [
+              // Android 的 heads-up 通知會蓋住最上方，預留空間避免擋到車速。
+              if (Platform.isAndroid) const SizedBox(height: 48),
+              _StatusBar(speed: _isBle ? null : _sim.bikeSpeed.round()),
+              _AlertLines(alert: hasData ? alert : null),
+              _PotholeAlertLine(text: hasData ? potholeAlertText : null),
+              const SizedBox(height: 14),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child: MapCard(),
               ),
-            ),
-          ],
+              const SizedBox(height: 16),
+              Expanded(
+                child:
+                    !hasData
+                        ? const Center(child: Text('尚無有效資料，雷達暫停顯示'))
+                        : RadarView(
+                          threats: threats,
+                          potholeFrontLeft: _sim.potholeFrontLeft,
+                          potholeFrontCenter: _sim.potholeFrontCenter,
+                          potholeFrontRight: _sim.potholeFrontRight,
+                        ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -327,9 +363,10 @@ class _PotholeAlertLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final titleStyle = Theme.of(
-      context,
-    ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800, color: HudColors.danger);
+    final titleStyle = Theme.of(context).textTheme.titleMedium?.copyWith(
+      fontWeight: FontWeight.w800,
+      color: HudColors.danger,
+    );
     return Padding(
       padding: const EdgeInsets.fromLTRB(22, 6, 22, 0),
       child: AnimatedOpacity(
@@ -360,9 +397,10 @@ class _AlertLines extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final titleStyle = Theme.of(
-      context,
-    ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800, color: HudColors.danger);
+    final titleStyle = Theme.of(context).textTheme.titleMedium?.copyWith(
+      fontWeight: FontWeight.w800,
+      color: HudColors.danger,
+    );
     return Padding(
       padding: const EdgeInsets.fromLTRB(22, 6, 22, 0),
       child: AnimatedOpacity(
@@ -372,7 +410,10 @@ class _AlertLines extends StatelessWidget {
           children: [
             const Icon(Icons.warning_rounded, size: 18, color: HudColors.warn),
             const SizedBox(width: 8),
-            Text(alert == null ? ' ' : '${alert!.label}車輛快速逼近', style: titleStyle),
+            Text(
+              alert == null ? ' ' : '${alert!.label}車輛快速逼近',
+              style: titleStyle,
+            ),
           ],
         ),
       ),

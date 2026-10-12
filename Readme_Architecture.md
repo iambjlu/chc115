@@ -153,7 +153,7 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
     `SystemSound.play()`），不再顯示任何系統通知橫幅；畫面提示改由
     `RideHudScreen._notifyHazard()` 在 iOS 上額外用 `ScaffoldMessenger`
     顯示浮動 `SnackBar`（`HudColors.danger` 背景、標題+內文兩行文字，
-    顯示 3 秒，新警示會先 `hideCurrentSnackBar()` 再顯示），Android 則
+    顯示 3 秒，新警示會先 `hideCurrentSnackBar()` 再顯示；`RideHudScreen` 以 `PopScope` 在開始返回歡迎畫面的瞬間（含手勢返回、斷線）呼叫 `clearSnackBars()` 立即撤銷，`dispose()` 也再清一次，避免掛在全域 `ScaffoldMessenger` 上的 SnackBar 殘留到歡迎畫面），Android 則
     維持只靠系統通知呈現、不疊加 SnackBar。
   - 兩平台改為呼叫 `_longVibration()`：連續 3 次 `HapticFeedback
     .heavyImpact()`、中間間隔 150ms，模擬出比單次震動更明顯的長震動感。

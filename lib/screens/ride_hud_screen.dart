@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -5,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../models/simulation_values.dart';
 import '../models/vehicle_threat.dart';
 import '../services/alert_notification_service.dart';
+import '../services/ble_radar_service.dart';
 import '../theme/hud_colors.dart';
 import '../widgets/map_card.dart';
 import '../widgets/radar_view.dart';
@@ -21,6 +23,29 @@ class RideHudScreen extends StatefulWidget {
 
 class _RideHudScreenState extends State<RideHudScreen> {
   SimulationValues _sim = SimulationValues.demo;
+  StreamSubscription<SimulationValues>? _bleSub;
+
+  @override
+  void initState() {
+    super.initState();
+    // 藍牙收到的數據與模擬面板走同一條路徑（含通知比對）。
+    _bleSub = BleRadarService.instance.values.listen(_applySimulationValues);
+  }
+
+  @override
+  void dispose() {
+    _bleSub?.cancel();
+    super.dispose();
+  }
+
+  void _toggleBle() {
+    final ble = BleRadarService.instance;
+    if (ble.status.value == BleRadarStatus.idle) {
+      ble.connect();
+    } else {
+      ble.disconnect();
+    }
+  }
 
   List<VehicleThreat> get _threats => [
     VehicleThreat(
@@ -172,10 +197,36 @@ class _RideHudScreenState extends State<RideHudScreen> {
 
     return Scaffold(
       backgroundColor: HudColors.surface,
-      floatingActionButton: FloatingActionButton(
-        onPressed: _openSimulationSheet,
-        tooltip: '模擬控制',
-        child: const Icon(Icons.tune_rounded),
+      floatingActionButton: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FloatingActionButton(
+            onPressed: _openSimulationSheet,
+            tooltip: '模擬控制',
+            child: const Icon(Icons.tune_rounded),
+          ),
+          const SizedBox(width: 12),
+          ValueListenableBuilder<BleRadarStatus>(
+            valueListenable: BleRadarService.instance.status,
+            builder: (context, status, _) => FloatingActionButton(
+              onPressed: _toggleBle,
+              tooltip: switch (status) {
+                BleRadarStatus.idle => '連線雷達模組',
+                BleRadarStatus.scanning => '搜尋中…（點擊取消）',
+                BleRadarStatus.connecting => '連線中…（點擊取消）',
+                BleRadarStatus.connected => '已連線（點擊中斷）',
+              },
+              backgroundColor: status == BleRadarStatus.connected ? HudColors.safe : null,
+              child: Icon(
+                status == BleRadarStatus.connected
+                    ? Icons.bluetooth_connected_rounded
+                    : status == BleRadarStatus.idle
+                    ? Icons.bluetooth_rounded
+                    : Icons.bluetooth_searching_rounded,
+              ),
+            ),
+          ),
+        ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
       body: SafeArea(

@@ -11,7 +11,7 @@
 
 - 平台：Flutter App（Android、iOS）
 - 語言：Dart（SDK `^3.7.2`）
-- 主要套件：`google_maps_flutter`、`geolocator`
+- 主要套件：`google_maps_flutter`、`geolocator`、`flutter_blue_plus`（BLE）
 
 ## 目錄結構
 
@@ -30,10 +30,12 @@ chc115/
 │   │   ├── radar_view.dart
 │   │   └── simulation_sheet.dart
 │   ├── services/                # 與 UI 無關的服務層
-│   │   └── alert_notification_service.dart
+│   │   ├── alert_notification_service.dart
+│   │   └── ble_radar_service.dart
 │   └── theme/                   # 視覺樣式
 │       └── hud_colors.dart
 ├── assets/                      # 靜態資源（如 bike.png）
+├── arduino/                     # AMB82 板子端程式（AMB82_Grove_SSCMA.ino）
 ├── test/                        # Widget/單元測試
 ├── android/ , ios/               # 平台專案（原生殼層、金鑰設定）
 └── pubspec.yaml                  # 套件與資源設定
@@ -92,6 +94,11 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
     - 坑洞（`HazardCategory.pothole`）：左前/正前/右前皆由假變真才
       觸發一次，避免同一坑洞持續開啟時反覆通知；三個方向共用同一個
       通知 id，因此只會保留最新觸發的那一個方向。
+  - `initState()` 訂閱 `BleRadarService.values`，收到的藍牙數據直接餵給
+    `_applySimulationValues()`，與模擬面板共用同一條更新／通知比對路徑。
+    左下角除了模擬控制按鈕外，旁邊多一顆藍牙 FAB（`_toggleBle()`）：依
+    `BleRadarService.status` 切換圖示（未連線／搜尋中／已連線，已連線時
+    背景為 `HudColors.safe`），點擊可連線或中斷。
   - 畫面內含三個私有元件：`_StatusBar`（車速讀數）、`_AlertLines`
     （後方車輛逼近警示，一行 `Icon(Icons.warning_rounded)` + 粗體文字）
     與 `_PotholeAlertLine`（坑洞提示文字，依左前/正前/右前順序列出
@@ -134,6 +141,26 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   - 兩平台的 `notifyHazard()` 呼叫端（`RideHudScreen`）內容一律只
     敘述目前狀態（如「左後方車輛逐漸接近」），不包含變換車道等行動
     建議。
+
+- **`BleRadarService`**：與 AMB82 板子的 BLE 連線單例。掃描廣播名稱
+  `AMB82-Radar`（或 service UUID `6E400001-B5A3-F393-E0A9-E50E24DCCA9E`），
+  連線後訂閱 TX characteristic（`6E400003-…`）的 Notify。每筆資料為一行
+  ASCII CSV：`速度,左距離,左逼近,右距離,右逼近,左前坑洞,正前坑洞,右前坑洞`
+  （距離為公尺，布林欄位 1／0），由 `parse()` 轉成 `SimulationValues`
+  從 `values` Stream 推送；`status`（`BleRadarStatus`：idle／scanning／
+  connecting／connected）為 `ValueNotifier` 供 UI 顯示。連線斷開會自動清理
+  回到 idle。`connect()` 需帶 `License.nonprofit`（`flutter_blue_plus` 2.x
+  的授權聲明）。Android 需 `BLUETOOTH_SCAN`／`BLUETOOTH_CONNECT`，iOS 需
+  `NSBluetoothAlwaysUsageDescription`。
+
+### arduino（板子端）
+
+- **`AMB82_Grove_SSCMA.ino`**：除了原本透過 Grove UART 讀 SSCMA 偵測結果
+  外，另以 AmebaPro2 的 `BLEDevice.h` 建立 BLE Peripheral（廣播名稱
+  `AMB82-Radar`，單一 Notify characteristic）。App 訂閱後，`loop()` 每秒呼叫
+  `sendSimulatedRadar()` 送出一筆模擬數據（約 12 秒一個循環，涵蓋左側逐漸
+  逼近、右側來回、左前／正前／右前坑洞等狀態），格式見 `BleRadarService`。
+  之後要換成真實數據，只需改 `sendSimulatedRadar()` 內的取值來源。
 
 ### widgets（UI 元件）
 
@@ -211,16 +238,16 @@ RideHudScreen._sim  (setState)
 
 ## 測試
 
+- `test/ble_radar_parse_test.dart`：驗證 `BleRadarService.parse()` 的 CSV 解析與錯誤格式處理。
 - `test/widget_test.dart`：驗證初始畫面顯示車速 `25 km/h`，以及點擊
   浮動按鈕後能正確開啟「模擬控制」bottom sheet。
 
 ## 延伸開發建議
 
-- 目前威脅來源（車速、車距、逼近狀態、坑洞）皆由 `SimulationSheet`
-  手動模擬；若要串接真實感測資料（藍牙雷達模組、感測器等），建議在
-  `RideHudScreen` 與資料來源之間新增一個 Repository/Service 層，
-  以 Stream 方式推送 `SimulationValues`（或改為更貼近真實感測器的模型），
-  取代目前由 UI 直接呼叫 `setState` 的模式。
+- 威脅來源目前有兩種：`SimulationSheet` 手動模擬，以及透過
+  `BleRadarService` 接收 AMB82 板子送來的（目前仍是模擬的）BLE 數據，
+  兩者皆以 `SimulationValues` 進入 `RideHudScreen`。若要改為更貼近真實
+  感測器的模型，可把 `SimulationValues` 換成專屬的感測資料模型。
 - `RadarView` 的版面計算（弧線半徑、車輛與三角形位置）目前集中在單一
   `build` 方法內，邏輯較密集；後續若要支援更多威脅來源或不同雷達造型，
   可考慮拆出獨立的排版計算類別以利測試。

@@ -23,6 +23,7 @@ chc115/
 │   │   ├── simulation_values.dart
 │   │   └── vehicle_threat.dart
 │   ├── screens/                 # 頁面層（組合各個 widget）
+│   │   ├── welcome_screen.dart
 │   │   └── ride_hud_screen.dart
 │   ├── widgets/                 # 可重用/局部 UI 元件
 │   │   ├── map_card.dart
@@ -35,7 +36,7 @@ chc115/
 │   └── theme/                   # 視覺樣式
 │       └── hud_colors.dart
 ├── assets/                      # 靜態資源（如 bike.png）
-├── arduino/                     # AMB82 板子端程式（AMB82_Grove_SSCMA.ino）
+├── arduino/                     # AMB82 板子端程式（AMB82_Grove_SSCMA/）、note.md（工具安裝／編譯上傳筆記）、App接收格式.xlsx
 ├── test/                        # Widget/單元測試
 ├── android/ , ios/               # 平台專案（原生殼層、金鑰設定）
 └── pubspec.yaml                  # 套件與資源設定
@@ -47,8 +48,10 @@ chc115/
 
 ```
 main.dart
-   │  建立 MaterialApp，套用 HudColors 主題
+   │  建立 MaterialApp，套用 HudColors 主題，首頁為 WelcomeScreen
    ▼
+screens/welcome_screen.dart  ──「連線」／「使用模擬數據繼續」──┐
+                                                           ▼
 screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
    │  持有 SimulationValues 狀態；衍生出 List<VehicleThreat>
    ├──> widgets/map_card.dart → widgets/live_google_map.dart
@@ -68,6 +71,12 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   - `label`：中文方位文字（「左後方」／「右後方」）。
 
 ### screens（頁面／狀態管理）
+
+- **`WelcomeScreen`**：App 首頁（`MaterialApp.home`）。「連線」按鈕呼叫
+  `BleRadarService.connect()`，成功則 push `RideHudScreen(mode: ble)`，
+  失敗在按鈕下方顯示找不到 `AMB82-Radar` 的錯誤文字；按鈕依
+  `BleRadarService.status` 顯示搜尋中／連線中並停用。按鈕下方的小字
+  「使用模擬數據繼續」則 push `RideHudScreen(mode: simulation)`。
 
 - **`RideHudScreen`**：唯一的頁面，也是狀態持有者。
   - 內部持有 `SimulationValues _sim`（初始為 `demo`）。
@@ -94,11 +103,15 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
     - 坑洞（`HazardCategory.pothole`）：左前/正前/右前皆由假變真才
       觸發一次，避免同一坑洞持續開啟時反覆通知；三個方向共用同一個
       通知 id，因此只會保留最新觸發的那一個方向。
-  - `initState()` 訂閱 `BleRadarService.values`，收到的藍牙數據直接餵給
-    `_applySimulationValues()`，與模擬面板共用同一條更新／通知比對路徑。
-    左下角除了模擬控制按鈕外，旁邊多一顆藍牙 FAB（`_toggleBle()`）：依
-    `BleRadarService.status` 切換圖示（未連線／搜尋中／已連線，已連線時
-    背景為 `HudColors.safe`），點擊可連線或中斷。
+  - 以 `RideHudMode`（`ble`／`simulation`）決定資料來源。`ble` 模式初始為
+    `SimulationValues.empty`（全部安全、車速 0），`initState()` 訂閱
+    `BleRadarService.values`，收到的數據（車速沿用目前值）直接餵給
+    `_applySimulationValues()`，與模擬面板共用同一條更新／通知比對路徑；
+    同時監聽 `status`，藍牙中途斷線（回到 idle）時自動 pop 回歡迎畫面。
+    `simulation` 模式使用 `SimulationValues.demo`。
+  - 左下角為 `PopupMenuButton` 選單（≡ 圖示的 FAB）：「斷線」（藍牙模式會
+    先 `BleRadarService.disconnect()`，再回到歡迎畫面）；僅模擬模式額外有
+    「模擬控制」項目以開啟 `SimulationSheet`。
   - 畫面內含三個私有元件：`_StatusBar`（車速讀數）、`_AlertLines`
     （後方車輛逼近警示，一行 `Icon(Icons.warning_rounded)` + 粗體文字）
     與 `_PotholeAlertLine`（坑洞提示文字，依左前/正前/右前順序列出
@@ -145,8 +158,11 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
 - **`BleRadarService`**：與 AMB82 板子的 BLE 連線單例。掃描廣播名稱
   `AMB82-Radar`（或 service UUID `6E400001-B5A3-F393-E0A9-E50E24DCCA9E`），
   連線後訂閱 TX characteristic（`6E400003-…`）的 Notify。每筆資料為一行
-  ASCII CSV：`速度,左距離,左逼近,右距離,右逼近,左前坑洞,正前坑洞,右前坑洞`
-  （距離為公尺，布林欄位 1／0），由 `parse()` 轉成 `SimulationValues`
+  ASCII CSV（7 欄，來源為 `arduino/App接收格式.xlsx`）：
+  `左後距離,右後距離,左後逼近,右後逼近,左前坑,正前坑,右前坑`。距離 1 遠
+  （30m）／2 中（15m）／3 近（5m），逼近與坑洞 1 有／0 沒有，任何欄位為 9
+  代表感測錯誤，該欄沿用上一次的值；也接受 7 個連續數字。車速不在協定內。
+  由 `parse(line, base)` 轉成 `SimulationValues`
   從 `values` Stream 推送；`status`（`BleRadarStatus`：idle／scanning／
   connecting／connected）為 `ValueNotifier` 供 UI 顯示。連線斷開會自動清理
   回到 idle。`connect()` 需帶 `License.nonprofit`（`flutter_blue_plus` 2.x
@@ -158,8 +174,11 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
 - **`AMB82_Grove_SSCMA.ino`**：除了原本透過 Grove UART 讀 SSCMA 偵測結果
   外，另以 AmebaPro2 的 `BLEDevice.h` 建立 BLE Peripheral（廣播名稱
   `AMB82-Radar`，單一 Notify characteristic）。App 訂閱後，`loop()` 每秒呼叫
-  `sendSimulatedRadar()` 送出一筆模擬數據（約 12 秒一個循環，涵蓋左側逐漸
-  逼近、右側來回、左前／正前／右前坑洞等狀態），格式見 `BleRadarService`。
+  `sendSimulatedRadar()` 送出一筆模擬數據（12 步一個循環，涵蓋左側遠→中→近、
+  右側近→遠、左前／正前／右前坑洞等狀態），格式見 `BleRadarService`。
+  草稿放在 `AMB82_Grove_SSCMA/` 子資料夾（Arduino 要求資料夾與草稿同名），
+  並加了 `printf` 巨集與前置宣告的相容處理；工具安裝與 arduino-cli 編譯／上傳
+  指令見 `arduino/note.md`。
   之後要換成真實數據，只需改 `sendSimulatedRadar()` 內的取值來源。
 
 ### widgets（UI 元件）
@@ -238,9 +257,8 @@ RideHudScreen._sim  (setState)
 
 ## 測試
 
-- `test/ble_radar_parse_test.dart`：驗證 `BleRadarService.parse()` 的 CSV 解析與錯誤格式處理。
-- `test/widget_test.dart`：驗證初始畫面顯示車速 `25 km/h`，以及點擊
-  浮動按鈕後能正確開啟「模擬控制」bottom sheet。
+- `test/ble_radar_parse_test.dart`：驗證 `BleRadarService.parse()` 的 7 欄解析、9＝錯誤沿用舊值與錯誤格式處理。
+- `test/widget_test.dart`：驗證歡迎畫面的「連線」／「使用模擬數據繼續」，進入模擬 HUD 後顯示車速 `25 km/h`，並可由左下選單看到「斷線」與開啟「模擬控制」。
 
 ## 延伸開發建議
 

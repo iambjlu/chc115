@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'screens/ride_hud_screen.dart';
+import 'screens/welcome_screen.dart';
 import 'services/alert_notification_service.dart';
 import 'theme/hud_colors.dart';
 
@@ -27,7 +27,7 @@ class RideHudApp extends StatelessWidget {
           brightness: Brightness.light,
         ),
       ),
-      home: const RideHudScreen(),
+      home: const WelcomeScreen(),
     );
   }
 }

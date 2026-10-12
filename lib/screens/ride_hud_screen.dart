@@ -12,39 +12,57 @@ import '../widgets/map_card.dart';
 import '../widgets/radar_view.dart';
 import '../widgets/simulation_sheet.dart';
 
+/// HUD 的資料來源：藍牙（AMB82 板子）或手動模擬面板。
+enum RideHudMode { ble, simulation }
+
 /// 騎乘中的後方雷達 HUD 主畫面：白底車速讀數、警示文字、深色夜間地圖、
 /// 白底雷達視圖，左下角浮動按鈕開啟模擬控制面板。
 class RideHudScreen extends StatefulWidget {
-  const RideHudScreen({super.key});
+  const RideHudScreen({super.key, this.mode = RideHudMode.simulation});
+
+  final RideHudMode mode;
 
   @override
   State<RideHudScreen> createState() => _RideHudScreenState();
 }
 
 class _RideHudScreenState extends State<RideHudScreen> {
-  SimulationValues _sim = SimulationValues.demo;
+  late SimulationValues _sim = widget.mode == RideHudMode.ble
+      ? SimulationValues.empty
+      : SimulationValues.demo;
   StreamSubscription<SimulationValues>? _bleSub;
+
+  bool get _isBle => widget.mode == RideHudMode.ble;
 
   @override
   void initState() {
     super.initState();
-    // 藍牙收到的數據與模擬面板走同一條路徑（含通知比對）。
-    _bleSub = BleRadarService.instance.values.listen(_applySimulationValues);
+    if (_isBle) {
+      // 藍牙收到的數據與模擬面板走同一條路徑（含通知比對）。
+      _bleSub = BleRadarService.instance.values.listen(
+        (v) => _applySimulationValues(v.copyWith(bikeSpeed: _sim.bikeSpeed)),
+      );
+      // 連線中斷（板子斷電、離開範圍）時自動回到歡迎畫面。
+      BleRadarService.instance.status.addListener(_onBleStatus);
+    }
   }
 
   @override
   void dispose() {
     _bleSub?.cancel();
+    if (_isBle) BleRadarService.instance.status.removeListener(_onBleStatus);
     super.dispose();
   }
 
-  void _toggleBle() {
-    final ble = BleRadarService.instance;
-    if (ble.status.value == BleRadarStatus.idle) {
-      ble.connect();
-    } else {
-      ble.disconnect();
+  void _onBleStatus() {
+    if (BleRadarService.instance.status.value == BleRadarStatus.idle && mounted) {
+      Navigator.of(context).maybePop();
     }
+  }
+
+  Future<void> _disconnect() async {
+    if (_isBle) await BleRadarService.instance.disconnect();
+    if (mounted) Navigator.of(context).maybePop();
   }
 
   List<VehicleThreat> get _threats => [
@@ -197,36 +215,30 @@ class _RideHudScreenState extends State<RideHudScreen> {
 
     return Scaffold(
       backgroundColor: HudColors.surface,
-      floatingActionButton: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          FloatingActionButton(
-            onPressed: _openSimulationSheet,
-            tooltip: '模擬控制',
-            child: const Icon(Icons.tune_rounded),
-          ),
-          const SizedBox(width: 12),
-          ValueListenableBuilder<BleRadarStatus>(
-            valueListenable: BleRadarService.instance.status,
-            builder: (context, status, _) => FloatingActionButton(
-              onPressed: _toggleBle,
-              tooltip: switch (status) {
-                BleRadarStatus.idle => '連線雷達模組',
-                BleRadarStatus.scanning => '搜尋中…（點擊取消）',
-                BleRadarStatus.connecting => '連線中…（點擊取消）',
-                BleRadarStatus.connected => '已連線（點擊中斷）',
-              },
-              backgroundColor: status == BleRadarStatus.connected ? HudColors.safe : null,
-              child: Icon(
-                status == BleRadarStatus.connected
-                    ? Icons.bluetooth_connected_rounded
-                    : status == BleRadarStatus.idle
-                    ? Icons.bluetooth_rounded
-                    : Icons.bluetooth_searching_rounded,
-              ),
+      floatingActionButton: PopupMenuButton<_HudMenu>(
+        tooltip: '選單',
+        position: PopupMenuPosition.over,
+        onSelected: (item) => switch (item) {
+          _HudMenu.simulation => _openSimulationSheet(),
+          _HudMenu.disconnect => _disconnect(),
+        },
+        itemBuilder: (context) => [
+          if (!_isBle)
+            const PopupMenuItem(
+              value: _HudMenu.simulation,
+              child: ListTile(leading: Icon(Icons.tune_rounded), title: Text('模擬控制')),
             ),
+          const PopupMenuItem(
+            value: _HudMenu.disconnect,
+            child: ListTile(leading: Icon(Icons.bluetooth_disabled_rounded), title: Text('斷線')),
           ),
         ],
+        child: IgnorePointer(
+          child: FloatingActionButton(
+            onPressed: () {},
+            child: const Icon(Icons.menu_rounded),
+          ),
+        ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
       body: SafeArea(
@@ -255,6 +267,8 @@ class _RideHudScreenState extends State<RideHudScreen> {
     );
   }
 }
+
+enum _HudMenu { simulation, disconnect }
 
 class _StatusBar extends StatelessWidget {
   const _StatusBar({required this.speed});

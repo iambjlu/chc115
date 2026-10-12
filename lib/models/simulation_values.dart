@@ -26,6 +26,18 @@ class SimulationValues {
     potholeFrontRight: false,
   );
 
+  /// 藍牙模式剛進入、尚未收到任何數據時的初始畫面：全部安全、無警示。
+  static const empty = SimulationValues(
+    bikeSpeed: 0,
+    leftDistance: 30,
+    leftApproaching: false,
+    rightDistance: 30,
+    rightApproaching: false,
+    potholeFrontLeft: false,
+    potholeFrontCenter: false,
+    potholeFrontRight: false,
+  );
+
   final double bikeSpeed;
   final double leftDistance;
   final bool leftApproaching;

@@ -10,8 +10,8 @@ enum BleRadarStatus { idle, scanning, connecting, connected }
 
 /// 與 AMB82 雷達模組（見 arduino/AMB82_Grove_SSCMA.ino）的 BLE 連線服務。
 /// 掃描廣播名稱 [deviceName]，連線後訂閱 [txUuid] 的 Notify，將每行
-/// 「速度,左距離,左逼近,右距離,右逼近,左前坑洞,正前坑洞,右前坑洞」
-/// 解析成 [SimulationValues] 從 [values] 推送出去。
+/// 「左後距離,右後距離,左後逼近,右後逼近,左前坑,正前坑,右前坑」
+/// 解析成 [SimulationValues] 從 [values] 推送出去（格式見 [parse]）。
 class BleRadarService {
   BleRadarService._();
   static final instance = BleRadarService._();
@@ -23,6 +23,8 @@ class BleRadarService {
   final status = ValueNotifier<BleRadarStatus>(BleRadarStatus.idle);
   final _values = StreamController<SimulationValues>.broadcast();
   Stream<SimulationValues> get values => _values.stream;
+
+  SimulationValues _latest = SimulationValues.empty;
 
   BluetoothDevice? _device;
   StreamSubscription<List<ScanResult>>? _scanSub;
@@ -84,26 +86,53 @@ class BleRadarService {
   }
 
   void _onData(List<int> data) {
-    final parsed = parse(utf8.decode(data, allowMalformed: true));
-    if (parsed != null) _values.add(parsed);
+    final parsed = parse(utf8.decode(data, allowMalformed: true), _latest);
+    if (parsed == null) return;
+    _latest = parsed;
+    _values.add(parsed);
   }
 
-  /// 解析一行 CSV；格式不符回傳 null。
+  /// 解析一行 7 欄資料，欄位依序為：
+  /// 左後距離、右後距離（1 遠／2 中／3 近）、左後逼近、右後逼近、
+  /// 左前坑、正前坑、右前坑（1 有／0 沒有）；任何欄位為 9 代表感測錯誤，
+  /// 該欄沿用 [base] 的舊值。欄位以逗號分隔，也接受 7 個連續數字。
+  /// 格式不符回傳 null。車速不在此協定內，沿用 [base.bikeSpeed]。
   @visibleForTesting
-  static SimulationValues? parse(String line) {
-    final p = line.trim().split(',');
-    if (p.length != 8) return null;
-    final n = p.map(num.tryParse).toList();
+  static SimulationValues? parse(String line, SimulationValues base) {
+    final text = line.trim();
+    final parts = text.contains(',') ? text.split(',').map((e) => e.trim()).toList() : text.split('');
+    if (parts.length != 7) return null;
+    final n = parts.map(int.tryParse).toList();
     if (n.any((e) => e == null)) return null;
-    return SimulationValues(
-      bikeSpeed: n[0]!.toDouble(),
-      leftDistance: n[1]!.toDouble(),
-      leftApproaching: n[2] != 0,
-      rightDistance: n[3]!.toDouble(),
-      rightApproaching: n[4] != 0,
-      potholeFrontLeft: n[5] != 0,
-      potholeFrontCenter: n[6] != 0,
-      potholeFrontRight: n[7] != 0,
+
+    double? distance(int code, double old) => switch (code) {
+      1 => 30.0, // 遠
+      2 => 15.0, // 中
+      3 => 5.0, // 近
+      _ => code == 9 ? old : null,
+    };
+    bool? flag(int code, bool old) => switch (code) {
+      1 => true,
+      0 => false,
+      _ => code == 9 ? old : null,
+    };
+
+    final left = distance(n[0]!, base.leftDistance);
+    final right = distance(n[1]!, base.rightDistance);
+    final la = flag(n[2]!, base.leftApproaching);
+    final ra = flag(n[3]!, base.rightApproaching);
+    final pl = flag(n[4]!, base.potholeFrontLeft);
+    final pc = flag(n[5]!, base.potholeFrontCenter);
+    final pr = flag(n[6]!, base.potholeFrontRight);
+    if ([left, right, la, ra, pl, pc, pr].contains(null)) return null;
+    return base.copyWith(
+      leftDistance: left,
+      rightDistance: right,
+      leftApproaching: la,
+      rightApproaching: ra,
+      potholeFrontLeft: pl,
+      potholeFrontCenter: pc,
+      potholeFrontRight: pr,
     );
   }
 
@@ -115,6 +144,7 @@ class BleRadarService {
   }
 
   void _cleanup() {
+    _latest = SimulationValues.empty;
     _scanSub?.cancel();
     _connSub?.cancel();
     _dataSub?.cancel();

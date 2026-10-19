@@ -270,6 +270,11 @@ RideHudScreen._sim  (setState)
   與 `ios/Runner/Info.plist` 中宣告對應的定位權限描述文字。
 - **資源**：`assets/bike.png` 已在 `pubspec.yaml` 的 `assets:` 區塊註冊
   （整個 `assets/` 目錄）。
+- **IDE 並行執行**：`.idea/runConfigurations/main_dart.xml` 設定
+  `singleton="false"`（Allow parallel run），在 IntelliJ 先對 Android 按播放、
+  再切換裝置對 iPhone 按播放時，兩者會同時執行，不會互相停止。此檔在
+  `.gitignore` 內，不隨版控，換機器需在 Run Configuration 勾選
+  「Allow parallel run」。
 
 ## 測試
 

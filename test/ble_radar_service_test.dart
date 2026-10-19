@@ -26,11 +26,17 @@ void main() {
   });
   test('rejects partial, combined, malformed and sensor-error packets', () {
     for (final packet in ['', '1,3,0', '1,3,0,1,0,0,0,0',
-      '1,3,2,1,0,0,0', '0,3,0,1,0,0,0', '1,9,0,1,0,0,0',
+      '1,3,2,1,0,0,0', '4,3,0,1,0,0,0', '1,9,0,1,0,0,0',
       '1,3,0,1,9,0,0', 'x,3,0,1,0,0,0',
       '1,3,0,1,0,0,0\n1,3,0,1,0,0,0']) {
       expect(BleRadarService.parse(packet, base), isNull, reason: packet);
     }
+  });
+  test('distance 0 means no vehicle and is treated as farthest', () {
+    final v = BleRadarService.parse('0,0,0,0,1,0,0', base)!;
+    expect(v.leftDistance, 30);
+    expect(v.rightDistance, 30);
+    expect(v.potholeFrontLeft, true);
   });
   test('accepts whitespace and compact legacy packet', () {
     expect(BleRadarService.parse(' 2,1,1,0,1,0,1\r\n', base), isNotNull);

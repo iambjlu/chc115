@@ -123,6 +123,11 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   - 左下角為 `PopupMenuButton` 選單（≡ 圖示的 FAB）：「斷線」（藍牙模式會
     先 `BleRadarService.disconnect()`，再回到歡迎畫面）；僅模擬模式額外有
     「模擬控制」項目以開啟 `SimulationSheet`。
+  - 藍牙模式的車速改用 GPS：`initState()` 呼叫 `_startGps()`，檢查定位服務與
+    權限（必要時請求）後訂閱 `Geolocator.getPositionStream`（`LocationAccuracy.best`），
+    `Position.speed`（m/s）換算為 km/h 並四捨五入、低於 1 km/h 視為 0，存入
+    `_gpsSpeed` 供 `_StatusBar` 顯示；未取得定位或權限被拒時顯示「—」。`dispose()`
+    取消訂閱。模擬模式仍使用模擬面板的車速滑桿。
   - 除錯模式（`BleRadarService.debugMode` 開啟且為藍牙模式）時，雷達下方多一個
     黑底 `_RawDataPanel`（高 150，底部留白避開左下選單鈕），監聽 `rawLog`
     列出原始資料，可解析為綠字、無法解析為紅字。

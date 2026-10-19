@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../models/simulation_values.dart';
 import '../models/vehicle_threat.dart';
@@ -32,6 +33,9 @@ class _RideHudScreenState extends State<RideHudScreen> {
           ? BleRadarService.instance.latest
           : SimulationValues.demo;
   StreamSubscription<SimulationValues>? _bleSub;
+  StreamSubscription<Position>? _gpsSub;
+  // 藍牙模式的車速（km/h）來自 GPS；尚未取得定位或權限被拒時為 null，顯示「—」。
+  int? _gpsSpeed;
   ScaffoldMessengerState? _messenger;
 
   bool get _isBle => widget.mode == RideHudMode.ble;
@@ -47,6 +51,34 @@ class _RideHudScreenState extends State<RideHudScreen> {
       );
       // 連線中斷（板子斷電、離開範圍）時自動回到歡迎畫面。
       BleRadarService.instance.status.addListener(_onBleStatus);
+      unawaited(_startGps());
+    }
+  }
+
+  Future<void> _startGps() async {
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) return;
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission != LocationPermission.always &&
+          permission != LocationPermission.whileInUse) {
+        return;
+      }
+      if (!mounted) return;
+      _gpsSub = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.best,
+        ),
+      ).listen((p) {
+        // m/s 換算 km/h；speed 可能為負（無效），低於 1 km/h 視為靜止以免漂移。
+        final kmh = p.speed < 0 ? 0.0 : p.speed * 3.6;
+        final next = kmh < 1 ? 0 : kmh.round();
+        if (mounted && next != _gpsSpeed) setState(() => _gpsSpeed = next);
+      });
+    } catch (e) {
+      debugPrint('[GPS] 無法取得車速：$e');
     }
   }
 
@@ -61,6 +93,7 @@ class _RideHudScreenState extends State<RideHudScreen> {
     // 保險：離開此頁時一併撤銷 SnackBar（它掛在全域 ScaffoldMessenger 上，不會隨頁面消失）。
     _messenger?.clearSnackBars();
     _bleSub?.cancel();
+    _gpsSub?.cancel();
     if (_isBle) {
       BleRadarService.instance.status.removeListener(_onBleStatus);
       BleRadarService.instance.dataStatus.removeListener(_onDataStatus);
@@ -292,7 +325,7 @@ class _RideHudScreenState extends State<RideHudScreen> {
             children: [
               // Android 的 heads-up 通知會蓋住最上方，預留空間避免擋到車速。
               if (Platform.isAndroid) const SizedBox(height: 48),
-              _StatusBar(speed: _isBle ? null : _sim.bikeSpeed.round()),
+              _StatusBar(speed: _isBle ? _gpsSpeed : _sim.bikeSpeed.round()),
               _AlertLines(alert: hasData ? alert : null),
               _PotholeAlertLine(text: hasData ? potholeAlertText : null),
               const SizedBox(height: 14),

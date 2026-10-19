@@ -4,9 +4,11 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+
 import '../models/simulation_values.dart';
 
 enum BleRadarStatus { idle, scanning, connecting, connected }
+
 enum RadarDataStatus { waiting, receiving, stale, invalid }
 
 /// Current firmware sends one complete 13-byte ASCII CSV per notification.
@@ -23,6 +25,10 @@ class BleRadarService {
   final receivedCount = ValueNotifier<int>(0);
   final rawPacket = ValueNotifier<String>('');
   final lastError = ValueNotifier<String?>(null);
+  // 除錯模式：HUD 下方列出收到的原始資料（含無法解析者），由歡迎畫面開關。
+  final debugMode = ValueNotifier<bool>(false);
+  final rawLog = ValueNotifier<List<String>>(const []);
+  static const _rawLogLimit = 50;
   final _values = StreamController<SimulationValues>.broadcast();
   Stream<SimulationValues> get values => _values.stream;
   SimulationValues _latest = SimulationValues.empty;
@@ -41,6 +47,7 @@ class BleRadarService {
     lastError.value = null;
     receivedCount.value = 0;
     rawPacket.value = '';
+    rawLog.value = const [];
     dataStatus.value = RadarDataStatus.waiting;
     status.value = direct ? BleRadarStatus.connecting : BleRadarStatus.scanning;
     try {
@@ -58,25 +65,31 @@ class BleRadarService {
       } else {
         final found = Completer<BluetoothDevice?>();
         String? scanError;
-        _scanSub = FlutterBluePlus.onScanResults.listen((results) {
-          for (final r in results) {
-            // Do not select arbitrary devices exposing the generic UART UUID.
-            if (r.advertisementData.advName == deviceName ||
-                (Platform.isAndroid && r.device.remoteId.str.toUpperCase() == deviceMac)) {
-              if (!found.isCompleted) found.complete(r.device);
+        _scanSub = FlutterBluePlus.onScanResults.listen(
+          (results) {
+            for (final r in results) {
+              // Do not select arbitrary devices exposing the generic UART UUID.
+              if (r.advertisementData.advName == deviceName ||
+                  (Platform.isAndroid &&
+                      r.device.remoteId.str.toUpperCase() == deviceMac)) {
+                if (!found.isCompleted) found.complete(r.device);
+              }
             }
-          }
-        }, onError: (Object error) {
-          scanError = error.toString();
-          if (!found.isCompleted) found.complete(null);
-        });
+          },
+          onError: (Object error) {
+            scanError = error.toString();
+            if (!found.isCompleted) found.complete(null);
+          },
+        );
         await FlutterBluePlus.startScan(timeout: const Duration(seconds: 12));
         try {
-          final result = await found.future.timeout(const Duration(seconds: 12));
+          final result = await found.future.timeout(
+            const Duration(seconds: 12),
+          );
           if (result == null) throw StateError('掃描失敗：$scanError');
           device = result;
         } on TimeoutException {
-          throw StateError('未找到 $deviceName。請重啟板子、關閉 nRF Connect 的連線，並確認藍牙權限。Android 可試下方 MAC 直接連線。');
+          throw StateError('未找到 $deviceName。請重啟板子、關閉 nRF Connect 的連線，並確認藍牙權限。');
         } finally {
           await FlutterBluePlus.stopScan();
           await _scanSub?.cancel();
@@ -101,20 +114,28 @@ class BleRadarService {
     // Android 的 GATT error 133 多為舊連線／快取殘留或剛掃描完立刻連線，
     // 斷開、清快取、稍等後重試通常可恢復。
     const maxAttempts = 3;
-    for (var attempt = 1;; attempt++) {
+    for (var attempt = 1; ; attempt++) {
       try {
-        debugPrint('[BLE] connect 嘗試 $attempt/$maxAttempts：${device.remoteId.str}');
-        await device.connect(license: License.nonprofit,
-            timeout: const Duration(seconds: 15), mtu: null);
+        debugPrint(
+          '[BLE] connect 嘗試 $attempt/$maxAttempts：${device.remoteId.str}',
+        );
+        await device.connect(
+          license: License.nonprofit,
+          timeout: const Duration(seconds: 15),
+          mtu: null,
+        );
         break;
       } on FlutterBluePlusException catch (e) {
         debugPrint('[BLE] connect 嘗試 $attempt 失敗：$e');
         if (attempt >= maxAttempts || e.code != 133) {
-          throw StateError('$e（已嘗試 $attempt 次；Android 133 通常是 GATT 連線建立失敗，'
-              '請重啟 AMB82、關閉手機藍牙再開啟後重試）');
+          throw StateError(
+            '$e（已嘗試 $attempt 次；Android 133 通常是 GATT 連線建立失敗，'
+            '請重啟 AMB82、關閉手機藍牙再開啟後重試）',
+          );
         }
         await device.disconnect().catchError((_) {});
-        if (Platform.isAndroid) await device.clearGattCache().catchError((_) {});
+        if (Platform.isAndroid)
+          await device.clearGattCache().catchError((_) {});
         await Future<void>.delayed(const Duration(seconds: 1));
       }
     }
@@ -128,9 +149,12 @@ class BleRadarService {
       }
     });
     final services = await device.discoverServices();
-    final tx = services.where((s) => s.uuid == serviceUuid)
-        .expand((s) => s.characteristics)
-        .where((c) => c.uuid == txUuid).firstOrNull;
+    final tx =
+        services
+            .where((s) => s.uuid == serviceUuid)
+            .expand((s) => s.characteristics)
+            .where((c) => c.uuid == txUuid)
+            .firstOrNull;
     if (tx == null || !tx.properties.notify) {
       throw StateError('裝置沒有預期的雷達 TX Notify 服務');
     }
@@ -151,9 +175,11 @@ class BleRadarService {
   }
 
   void _onData(List<int> data) {
-    final text = utf8.decode(data, allowMalformed: true).trim();
+    final raw = utf8.decode(data, allowMalformed: true);
+    final text = raw.trim();
     rawPacket.value = text;
     final parsed = parse(text, _latest);
+    if (debugMode.value) _appendRawLog(raw, data.length, parsed != null);
     if (parsed == null) {
       dataStatus.value = RadarDataStatus.invalid;
       debugPrint('[BLE] 收到無法解析的資料：$text');
@@ -166,6 +192,18 @@ class BleRadarService {
     _values.add(parsed);
   }
 
+  // 新的在最前面；換行等不可見字元以跳脫字串顯示，方便看出分包問題。
+  void _appendRawLog(String text, int bytes, bool ok) {
+    final t = DateTime.now();
+    String two(int n) => n.toString().padLeft(2, '0');
+    final time =
+        '${two(t.hour)}:${two(t.minute)}:${two(t.second)}.'
+        '${t.millisecond.toString().padLeft(3, '0')}';
+    final shown = text.replaceAll('\n', r'\n').replaceAll('\r', r'\r');
+    final line = '$time  [$bytes B]  $shown  ${ok ? '✓' : '✗ 無法解析'}';
+    rawLog.value = [line, ...rawLog.value].take(_rawLogLimit).toList();
+  }
+
   /// 解析一行 7 欄資料，欄位依序為：
   /// 左後距離、右後距離（1 遠／2 中／3 近）、左後逼近、右後逼近、
   /// 左前坑、正前坑、右前坑（1 有／0 沒有）；任何欄位為 9 代表感測錯誤，
@@ -174,7 +212,10 @@ class BleRadarService {
   @visibleForTesting
   static SimulationValues? parse(String line, SimulationValues base) {
     final text = line.trim();
-    final parts = text.contains(',') ? text.split(',').map((e) => e.trim()).toList() : text.split('');
+    final parts =
+        text.contains(',')
+            ? text.split(',').map((e) => e.trim()).toList()
+            : text.split('');
     if (parts.length != 7) return null;
     final n = parts.map(int.tryParse).toList();
     if (n.any((e) => e == null)) return null;

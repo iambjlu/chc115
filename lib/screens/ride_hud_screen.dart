@@ -312,9 +312,50 @@ class _RideHudScreenState extends State<RideHudScreen> {
                           potholeFrontRight: _sim.potholeFrontRight,
                         ),
               ),
+              if (_isBle && BleRadarService.instance.debugMode.value)
+                const _RawDataPanel(),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 除錯模式：雷達下方列出收到的原始資料（新的在最上面）。
+class _RawDataPanel extends StatelessWidget {
+  const _RawDataPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 150,
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 72),
+      padding: const EdgeInsets.all(8),
+      color: Colors.black,
+      child: ValueListenableBuilder<List<String>>(
+        valueListenable: BleRadarService.instance.rawLog,
+        builder:
+            (context, lines, _) => lines.isEmpty
+                ? const Text(
+                    '等待原始資料…',
+                    style: TextStyle(color: Colors.white54, fontSize: 12),
+                  )
+                : ListView.builder(
+                    itemCount: lines.length,
+                    itemBuilder:
+                        (context, i) => Text(
+                          lines[i],
+                          style: TextStyle(
+                            color: lines[i].endsWith('✓')
+                                ? Colors.greenAccent
+                                : Colors.redAccent,
+                            fontFamily: 'Menlo',
+                            fontSize: 11,
+                          ),
+                        ),
+                  ),
       ),
     );
   }

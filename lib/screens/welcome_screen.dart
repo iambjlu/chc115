@@ -154,10 +154,24 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                   SizedBox(
                     height: 48,
                     child: _showSimulation
-                        ? TextButton(
-                            onPressed: busy ? null : () => _openHud(RideHudMode.simulation),
-                            child: Text('使用模擬數據繼續',
-                                style: textTheme.bodySmall?.copyWith(color: HudColors.inkDim)),
+                        ? Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              TextButton(
+                                onPressed: busy ? null : () => _openHud(RideHudMode.simulation),
+                                child: Text('使用模擬數據繼續',
+                                    style: textTheme.bodySmall?.copyWith(color: HudColors.inkDim)),
+                              ),
+                              ValueListenableBuilder<bool>(
+                                valueListenable: _ble.debugMode,
+                                builder: (context, on, _) => TextButton(
+                                  onPressed: () => _ble.debugMode.value = !on,
+                                  child: Text('除錯模式：${on ? '開' : '關'}',
+                                      style: textTheme.bodySmall?.copyWith(
+                                          color: on ? HudColors.danger : HudColors.inkDim)),
+                                ),
+                              ),
+                            ],
                           )
                         : null,
                   ),

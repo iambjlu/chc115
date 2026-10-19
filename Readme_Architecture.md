@@ -80,7 +80,9 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   標題為「自行車警示系統」、說明文字為空字串，畫面上只有大的「連線」按鈕。
   「使用模擬數據繼續」按鈕預設隱藏，長按「連線」按鈕才會顯示（僅存在
   `_showSimulation` 狀態，不持久化，重開 App 即恢復隱藏），按下後 push
-  `RideHudScreen(mode: simulation)`。
+  `RideHudScreen(mode: simulation)`。同一列旁邊還有「除錯模式：開／關」切換
+  （同樣長按後才出現），對應 `BleRadarService.debugMode`；開啟後藍牙 HUD
+  下方會顯示原始資料面板。
   實作 `WidgetsBindingObserver` 監聽 App lifecycle：App 進入背景（`paused`）
   時若已連線會乾淨斷線、標記 `_reconnectOnResume`；回到前景（`resumed`）
   時以 `popUntil(isFirst)` 關閉所有疊層後回到歡迎頁首頁，若有標記則自動
@@ -121,6 +123,9 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   - 左下角為 `PopupMenuButton` 選單（≡ 圖示的 FAB）：「斷線」（藍牙模式會
     先 `BleRadarService.disconnect()`，再回到歡迎畫面）；僅模擬模式額外有
     「模擬控制」項目以開啟 `SimulationSheet`。
+  - 除錯模式（`BleRadarService.debugMode` 開啟且為藍牙模式）時，雷達下方多一個
+    黑底 `_RawDataPanel`（高 150，底部留白避開左下選單鈕），監聽 `rawLog`
+    列出原始資料，可解析為綠字、無法解析為紅字。
   - Android 上 `_StatusBar` 之上固定多一個 48dp 的 `SizedBox`，避免 heads-up
     系統通知橫幅蓋住車速讀數（iOS 不用系統通知，不需要）。
   - 畫面內含三個私有元件：`_StatusBar`（車速讀數）、`_AlertLines`
@@ -171,8 +176,13 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   連線後訂閱 TX characteristic（`6E400003-…`）的 Notify。每筆資料為一行
   ASCII CSV（7 欄，來源為 `arduino/App接收格式.xlsx`）：
   `左後距離,右後距離,左後逼近,右後逼近,左前坑,正前坑,右前坑`。距離 1 遠
-  （30m）／2 中（15m）／3 近（5m），逼近與坑洞 1 有／0 沒有，任何欄位為 9
-  代表感測錯誤，該欄沿用上一次的值；也接受 7 個連續數字。車速不在協定內。
+  （30m）／2 中（15m）／3 近（5m），逼近與坑洞 1 有／0 沒有；距離欄位出現
+  0 或 9 等其他值、任何欄位為 9（感測錯誤）或格式不符，整筆視為無效
+  （`parse()` 回傳 null，`dataStatus` 變 `invalid`，HUD 顯示「尚無有效資料」，
+  例如 `0,0,0,0,0,0,0` 即因距離為 0 而無效）；也接受 7 個連續數字。車速不在協定內。
+  `debugMode`（`ValueNotifier<bool>`）開啟時，`_onData` 會把每筆收到的原始資料
+  （時間、位元組數、跳脫換行後的文字、是否可解析）加入 `rawLog`（最新在前、
+  最多 50 筆，每次 `connect()` 清空），含無法解析的資料。
   由 `parse(line, base)` 轉成 `SimulationValues`
   從 `values` Stream 推送；`status`（`BleRadarStatus`：idle／scanning／
   connecting／connected）為 `ValueNotifier` 供 UI 顯示。連線斷開會自動清理

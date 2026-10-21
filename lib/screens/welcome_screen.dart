@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../services/ble_radar_service.dart';
 import '../theme/hud_colors.dart';
+import '../widgets/m_stripe.dart';
 import 'ride_hud_screen.dart';
 
 /// 啟動後的歡迎畫面：按「連線」搜尋並連上 AMB82 雷達模組後進入 HUD（藍牙數據），
@@ -98,90 +100,146 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    return Scaffold(
-      backgroundColor: HudColors.surface,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: ValueListenableBuilder<BleRadarStatus>(
-            valueListenable: _ble.status,
-            builder: (context, status, _) {
-              final busy = status == BleRadarStatus.scanning || status == BleRadarStatus.connecting;
-              return Column(
-                children: [
-                  const Spacer(flex: 3),
-                  Image.asset('assets/bike.png', height: 140),
-                  const SizedBox(height: 28),
-                  Text('自行車警示系統', style: textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 8),
-                  Text('',
-                      textAlign: TextAlign.center,
-                      style: textTheme.bodyMedium?.copyWith(color: HudColors.inkDim)),
-                  const Spacer(flex: 3),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: FilledButton.icon(
-                      onPressed: busy ? null : _connect,
-                      onLongPress: busy ? null : () => setState(() => _showSimulation = true),
-                      icon: busy
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                            )
-                          : const Icon(Icons.bluetooth_rounded),
-                      label: Text(
-                        switch (status) {
-                          BleRadarStatus.scanning => '搜尋中…',
-                          BleRadarStatus.connecting => '連線中…',
-                          _ => '連線',
-                        },
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    height: 100,
-                    child: _error == null
-                        ? null
-                        : Text(_error!,
-                            textAlign: TextAlign.center,
-                            style: textTheme.bodySmall?.copyWith(color: HudColors.danger)),
-                  ),
-                  // 固定保留按鈕高度，顯示/隱藏時不會讓上方版面位移。
-                  SizedBox(
-                    height: 48,
-                    child: _showSimulation
-                        ? Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              TextButton(
-                                onPressed: busy ? null : () => _openHud(RideHudMode.simulation),
-                                child: Text('使用模擬數據繼續',
-                                    style: textTheme.bodySmall?.copyWith(color: HudColors.inkDim)),
-                              ),
-                              ValueListenableBuilder<bool>(
-                                valueListenable: _ble.debugMode,
-                                builder: (context, on, _) => TextButton(
-                                  onPressed: () => _ble.debugMode.value = !on,
-                                  child: Text('除錯模式：${on ? '開' : '關'}',
-                                      style: textTheme.bodySmall?.copyWith(
-                                          color: on ? HudColors.danger : HudColors.inkDim)),
-                                ),
-                              ),
-                            ],
-                          )
-                        : null,
-                  ),
-                  const SizedBox(height: 16),
-                ],
-              );
-            },
-          ),
+    final titleStyle = textTheme.displaySmall?.copyWith(
+      fontSize: 38,
+      height: 1.25,
+      color: HudColors.ink,
+    );
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: Scaffold(
+        backgroundColor: HudColors.surface,
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            const _WelcomeBackdrop(),
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: ValueListenableBuilder<BleRadarStatus>(
+                  valueListenable: _ble.status,
+                  builder: (context, status, _) {
+                    final busy = status == BleRadarStatus.scanning || status == BleRadarStatus.connecting;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(height: MediaQuery.sizeOf(context).height * 0.1),
+                        Text('騎得安心。', style: titleStyle?.copyWith(fontWeight: FontWeight.w300)),
+                        Text('自行車警示系統', style: titleStyle?.copyWith(fontWeight: FontWeight.w800)),
+                        const Spacer(),
+                        SizedBox(
+                          height: 72,
+                          width: double.infinity,
+                          child: _error == null
+                              ? null
+                              : Text(_error!,
+                                  textAlign: TextAlign.center,
+                                  style: textTheme.bodySmall?.copyWith(color: HudColors.danger)),
+                        ),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 56,
+                          child: FilledButton(
+                            onPressed: busy ? null : _connect,
+                            onLongPress: busy ? null : () => setState(() => _showSimulation = true),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: Colors.black,
+                              disabledBackgroundColor: Colors.white70,
+                              disabledForegroundColor: Colors.black54,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(2)),
+                            ),
+                            child: Text(
+                              switch (status) {
+                                BleRadarStatus.scanning => '搜尋中…',
+                                BleRadarStatus.connecting => '連線中…',
+                                _ => '連線',
+                              },
+                              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ),
+                        // 固定保留高度，顯示/隱藏時不會讓上方版面位移。
+                        SizedBox(
+                          height: 72,
+                          width: double.infinity,
+                          child: _showSimulation
+                              ? Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    TextButton(
+                                      onPressed: busy ? null : () => _openHud(RideHudMode.simulation),
+                                      child: Text('使用模擬數據繼續',
+                                          style: textTheme.bodyMedium?.copyWith(
+                                              color: HudColors.ink, fontWeight: FontWeight.w600)),
+                                    ),
+                                    ValueListenableBuilder<bool>(
+                                      valueListenable: _ble.debugMode,
+                                      builder: (context, on, _) => TextButton(
+                                        onPressed: () => _ble.debugMode.value = !on,
+                                        child: Text('除錯模式：${on ? '開' : '關'}',
+                                            style: textTheme.bodySmall?.copyWith(
+                                                color: on ? HudColors.danger : HudColors.inkDim)),
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : null,
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+            const Positioned(left: 0, right: 0, bottom: 0, child: MStripe()),
+          ],
         ),
       ),
+    );
+  }
+}
+
+/// 歡迎頁背景：近黑底、聚光燈般的灰階漸層，自行車大幅裁切傾斜置於右側，
+/// 上下以漸層壓暗，讓標題與按鈕清楚可讀。
+class _WelcomeBackdrop extends StatelessWidget {
+  const _WelcomeBackdrop();
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: RadialGradient(
+              center: Alignment(0.55, 0.15),
+              radius: 0.95,
+              colors: [Color(0xFF4A505A), HudColors.surface],
+            ),
+          ),
+        ),
+        Align(
+          alignment: const Alignment(0.7, 0.2),
+          child: FractionallySizedBox(
+            heightFactor: 0.7,
+            child: Transform.rotate(
+              angle: 0.35,
+              child: Image.asset('assets/bike.png', fit: BoxFit.contain),
+            ),
+          ),
+        ),
+        const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xCC000000), Color(0x00000000), Color(0x00000000), Color(0xF2000000)],
+              stops: [0, 0.3, 0.6, 0.9],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

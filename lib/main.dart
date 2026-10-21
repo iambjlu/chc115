@@ -20,11 +20,11 @@ class RideHudApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        brightness: Brightness.light,
+        brightness: Brightness.dark,
         scaffoldBackgroundColor: HudColors.surface,
         colorScheme: ColorScheme.fromSeed(
           seedColor: HudColors.brand,
-          brightness: Brightness.light,
+          brightness: Brightness.dark,
         ),
       ),
       home: const WelcomeScreen(),

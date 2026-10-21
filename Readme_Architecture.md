@@ -3,8 +3,8 @@
 ## 專案簡介
 
 `chc115` 是一個 Flutter 行動應用，實作「騎乘後方雷達 HUD」（Ride HUD）：
-畫面上半部顯示即時車速與 Google 地圖（夜間樣式、依裝置目前位置置中），
-下半部則以自訂雷達視圖呈現左右後方來車的威脅程度（安全／注意／危險）與
+畫面上半部顯示指針式車速儀表與 Google 地圖（依裝置目前位置置中），
+下半部則以虛擬道路檢視呈現左右後方來車的威脅程度（安全／注意／危險）與
 前方坑洞路況預警。左下角浮動按鈕可開啟「模擬控制面板」，用來手動調整
 車速、左右後方車距／是否逼近、前方坑洞開關等數值，方便在沒有真實感測
 硬體的情況下展示與測試 HUD 的各種狀態。
@@ -28,7 +28,9 @@ chc115/
 │   ├── widgets/                 # 可重用/局部 UI 元件
 │   │   ├── map_card.dart
 │   │   ├── live_google_map.dart
-│   │   ├── radar_view.dart
+│   │   ├── road_view.dart
+│   │   ├── speed_gauge.dart
+│   │   ├── m_stripe.dart
 │   │   └── simulation_sheet.dart
 │   ├── services/                # 與 UI 無關的服務層
 │   │   ├── alert_notification_service.dart
@@ -55,7 +57,8 @@ screens/welcome_screen.dart  ──「連線」／「使用模擬數據繼續」
 screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
    │  持有 SimulationValues 狀態；衍生出 List<VehicleThreat>
    ├──> widgets/map_card.dart → widgets/live_google_map.dart
-   ├──> widgets/radar_view.dart（純顯示，依 threats/坑洞旗標繪製）
+   ├──> widgets/speed_gauge.dart（指針式車速儀表）
+   ├──> widgets/road_view.dart（虛擬道路檢視，依 threats/坑洞旗標繪製）
    └──> widgets/simulation_sheet.dart（modal bottom sheet，回傳新的 SimulationValues）
 ```
 
@@ -77,7 +80,7 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   失敗時除了在按鈕下方顯示錯誤文字，也用 `AlertDialog`（可選取文字）顯示
   `BleRadarService.lastError` 的確切原因（含失敗階段與例外內容）；按鈕依
   `BleRadarService.status` 顯示搜尋中／連線中並停用。
-  標題為「自行車警示系統」、說明文字為空字串，畫面上只有大的「連線」按鈕。
+  畫面為全幅深色背景（`_WelcomeBackdrop`：聚光燈漸層、傾斜放大的自行車圖、上下壓暗漸層），左上為兩行標題（細體「騎得安心。」、粗體「自行車警示系統」），底部為白色方形「連線」按鈕與底邊 `MStripe`。
   「使用模擬數據繼續」按鈕預設隱藏，長按「連線」按鈕才會顯示（僅存在
   `_showSimulation` 狀態，不持久化，重開 App 即恢復隱藏），按下後 push
   `RideHudScreen(mode: simulation)`。同一列旁邊還有「除錯模式：開／關」切換
@@ -95,7 +98,7 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
     （何時該顯示逼近警示文字、顯示哪一側或雙側）。
   - `_openSimulationSheet()` 開啟 `SimulationSheet`，透過 `onChanged`
     回呼以 `setState` 更新 `_sim`，形成單向資料流：
-    `SimulationSheet 使用者輸入 → RideHudScreen.setState → 重新計算 threats/alert → 往下傳給 RadarView`。
+    `SimulationSheet 使用者輸入 → RideHudScreen.setState → 重新計算 threats/alert → 往下傳給 RoadView`。
   - `_applySimulationValues()`：在 `setState` 更新前後比較新舊
     `SimulationValues`，觸發 `services/alert_notification_service.dart`
     的 `AlertNotificationService.notifyHazard()`（系統通知＋一次震動），
@@ -126,21 +129,21 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   - 藍牙模式的車速改用 GPS：`initState()` 呼叫 `_startGps()`，檢查定位服務與
     權限（必要時請求）後訂閱 `Geolocator.getPositionStream`（`LocationAccuracy.best`），
     `Position.speed`（m/s）換算為 km/h 並四捨五入、低於 1 km/h 視為 0，存入
-    `_gpsSpeed` 供 `_StatusBar` 顯示；未取得定位或權限被拒時顯示「—」。`dispose()`
+    `_gpsSpeed` 供 `SpeedGauge` 顯示；未取得定位或權限被拒時顯示「—」。`dispose()`
     取消訂閱。模擬模式仍使用模擬面板的車速滑桿。
   - 除錯模式（`BleRadarService.debugMode` 開啟且為藍牙模式）時，雷達下方多一個
     黑底 `_RawDataPanel`（高 150，底部留白避開左下選單鈕），監聽 `rawLog`
     列出原始資料，可解析為綠字、無法解析為紅字。
-  - Android 上 `_StatusBar` 之上固定多一個 48dp 的 `SizedBox`，避免 heads-up
+  - Android 上 `SpeedGauge` 之上固定多一個 48dp 的 `SizedBox`，避免 heads-up
     系統通知橫幅蓋住車速讀數（iOS 不用系統通知，不需要）。
-  - 畫面內含三個私有元件：`_StatusBar`（車速讀數）、`_AlertLines`
+  - 畫面頂端為 `MStripe`（M 三色條），接著是 `SpeedGauge`（車速儀表）；內含兩個私有元件：`_AlertLines`
     （後方車輛逼近警示，一行 `Icon(Icons.warning_rounded)` + 粗體文字）
     與 `_PotholeAlertLine`（坑洞提示文字，依左前/正前/右前順序列出
     目前亮起的方向，多個方向以「、」分隔，格式如「請注意左前、正前
     坑洞」；與系統通知並行顯示，樣式比照 `_AlertLines`）。這兩個提示
     元件皆固定保留一行高度、以 `AnimatedOpacity` 做淡入淡出（沒有提示
     時文字改為單一空白字元、opacity 降為 0），而非用 `AnimatedSize`
-    整塊展開/收合，避免提示出現/消失時造成下方 `MapCard`／雷達視圖
+    整塊展開/收合，避免提示出現/消失時造成下方 `MapCard`／道路檢視
     上下位移。
 
 ### services（服務層）
@@ -213,7 +216,7 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
 
 ### widgets（UI 元件）
 
-- **`MapCard`**：純包裝層，將 `LiveGoogleMap` 裁切為圓角卡片（固定高度 240）。
+- **`MapCard`**：純包裝層，將 `LiveGoogleMap` 裁切為圓角卡片（固定高度 150）。
 - **`LiveGoogleMap`**：
   - 用 `geolocator` 取得裝置目前位置；若定位失敗（權限被拒/服務關閉）
     或 8 秒內未能取得定位（`Geolocator.getCurrentPosition()` 加上
@@ -228,18 +231,25 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
     換機器/重新取回專案時複製成正式檔名（去掉 `.example`）並貼回真實
     金鑰即可，`android/local.properties` 的 `sdk.dir`／`flutter.sdk` 兩行則
     由本機 IDE／`flutter` 工具在開啟專案或執行指令時自動覆寫為正確路徑。
-- **`RadarView`**：整個 HUD 的視覺核心，`StatefulWidget` + `LayoutBuilder`
-  依容器寬高做響應式排版與縮放：
-  - 中央置放車輛圖示（`assets/bike.png`）。
-  - 用 `CustomPainter`（`_RadarArcsPainter`）依 `VehicleThreat.level` 畫出
-    左／右後方的弧線（安全側多層綠色弧線、危險側單層貼近的紅色弧線，
-    類似 Wi-Fi 訊號的視覺隱喻）。
-  - 當某側標記為「逼近中」時，該側外緣顯示黃色警示三角形；用單一
-    `Timer.periodic` 驅動 `_blinkVisible`，確保左右三角形硬切閃爍且節奏同步
-    （刻意不做透明度補間）。
-  - 車輛前方可疊加三個方向（左前／正前／右前）的鋸齒波形坑洞標記
-    （`_PotholeMarker` + `_PotholeZigzagPainter`），純路況提示、不閃爍，
-    與後方威脅的圓弧視覺明確做出區隔。
+- **`SpeedGauge`**：車速儀表。左側 `CustomPainter` 畫 V 形刻度尺（路徑起點 0、
+  終點 `maxSpeed`＝25 km/h，每 1 km/h 一小刻度、每 5 一大刻度附數字，用
+  `PathMetric` 沿路徑取位置與法線），一根綠色指針依車速以 `TweenAnimationBuilder`
+  平滑移動（超過上限停在頂端）；右側為 104pt 細體大字車速（無資料顯示「—」）與
+  `km/h`。
+- **`MStripe`**：M 三色（淺藍／深藍／紅）等寬細條，用在 HUD 頂端與歡迎頁底部邊緣。
+- **`RoadView`**：整個 HUD 的視覺核心，`StatefulWidget` + `LayoutBuilder`，
+  以針孔透視（`_Cam`）將世界座標（自行車在原點、z 往前）投影到畫面，
+  鏡頭在自行車後上方，自行車約落在畫面 60% 高處：
+  - 道路、左右分隔虛線（依車速往鏡頭方向捲動）、前方坑洞球體由 `_RoadPainter`
+    繪製，遠端以漸層淡出到背景色；中央疊放車輛圖示（`assets/bike.png`）。
+  - 左／右後方來車由 `_CarsPainter` 以立方體繪製在左右車道，立方體前緣離車身
+    `distanceMeters` 公尺，顏色依 `VehicleThreat.level`（綠／黃／紅）；標記為
+    「逼近中」時立方體上方顯示黃色警示三角形，由單一時鐘（`_Clock`，
+    `SingleTickerProviderStateMixin` 的 `Ticker`）驅動，左右同步硬切閃爍
+    （刻意不做透明度補間）。painter 以時鐘作為 `repaint` 來源，捲動與閃爍不需
+    重建整個 widget 樹。
+  - 前方三個方向（左前／正前／右前）的坑洞以黃色球體表示（暫為占位造型），
+    純路況提示、不閃爍。
 - **`SimulationSheet`**：`StatefulWidget`，以 modal bottom sheet 形式提供：
   - 車速滑桿（`_SliderField`）。
   - 左／右後方車輛的距離下拉選單（近/中/遠三檔）與逼近開關
@@ -251,10 +261,11 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
 
 ### theme（樣式）
 
-- **`HudColors`**：集中定義的色彩常數，整體介面採白底黑字高對比 HUD
-  風格，只有地圖卡片使用深色（夜間地圖樣式）：
-  - `surface` / `ink` 系列：主畫面底色與文字色階。
-  - `brand` / `brandDim`：僅用於浮動按鈕、模擬面板等互動元件的品牌色。
+- **`HudColors`**：集中定義的色彩常數，整體介面採近黑底白字的深色儀表風格
+  （`main.dart` 使用 `Brightness.dark` 主題）：
+  - `surface` / `panel` / `road` / `ink` 系列：底色、道路色與文字色階。
+  - `gauge`：儀表指針綠。`mLightBlue` / `mBlue` / `mRed`：M 三色。
+  - `brand` / `brandDim`：僅用於浮動按鈕、模擬面板等互動元件的品牌色（M 藍）。
   - `safe` / `warn` / `danger`（各附一組 `Dim` 淡色版本）：語意色，
     對應威脅等級與坑洞警示。
 
@@ -266,13 +277,13 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
         ▼
 RideHudScreen._sim  (setState)
         │
-        ├─► _threats: List<VehicleThreat>  ──► RadarView（弧線＋警示三角形）
+        ├─► _threats: List<VehicleThreat>  ──► RoadView（立方體＋警示三角形）
         ├─► _activeAlert                   ──► _AlertLines（頂部警示文字）
-        └─► _sim.bikeSpeed                 ──► _StatusBar（車速讀數）
+        └─► _sim.bikeSpeed                 ──► SpeedGauge（車速儀表）
 ```
 
 所有威脅判斷邏輯（安全/注意/危險門檻、弧線層數、方位標籤）都
-集中在 `VehicleThreat`，UI 層（`RadarView`、`RideHudScreen`）只負責讀取
+集中在 `VehicleThreat`，UI 層（`RoadView`、`RideHudScreen`）只負責讀取
 衍生後的結果進行繪製，不重複業務邏輯。
 
 ## 平台與設定重點
@@ -301,6 +312,5 @@ RideHudScreen._sim  (setState)
   `BleRadarService` 接收 AMB82 板子送來的（目前仍是模擬的）BLE 數據，
   兩者皆以 `SimulationValues` 進入 `RideHudScreen`。若要改為更貼近真實
   感測器的模型，可把 `SimulationValues` 換成專屬的感測資料模型。
-- `RadarView` 的版面計算（弧線半徑、車輛與三角形位置）目前集中在單一
-  `build` 方法內，邏輯較密集；後續若要支援更多威脅來源或不同雷達造型，
-  可考慮拆出獨立的排版計算類別以利測試。
+- `RoadView` 的透視參數（鏡頭距離、車道寬、方塊大小）集中在 `_Cam` 與 `_CarsPainter`；
+  後續若要換成真實坑洞造型或更多威脅來源，可在此擴充。

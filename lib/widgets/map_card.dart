@@ -9,7 +9,7 @@ class MapCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(14),
-      child: const SizedBox(height: 240, child: LiveGoogleMap()),
+      child: const SizedBox(height: 150, child: LiveGoogleMap()),
     );
   }
 }

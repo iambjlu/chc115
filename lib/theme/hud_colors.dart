@@ -1,28 +1,37 @@
 import 'package:flutter/material.dart';
 
-/// 配色對齊原始參考稿：整體介面為白底、黑字的高對比 HUD，
-/// 只有地圖卡片採深色（夜間地圖樣式）。語意色（安全/注意/危險）
-/// 與互動用的品牌色（浮動按鈕、模擬面板滑桿）各自獨立。
+/// 深色儀表風 HUD 配色：近黑底、白字，車速儀表與道路檢視使用中性灰階，
+/// 只有語意色（安全/注意/危險）、儀表指針綠與邊緣的 M 三色條帶有顏色。
 class HudColors {
   HudColors._();
 
-  // 主畫面：白底
-  static const Color surface = Color(0xFFFFFFFF);
-  static const Color hairline = Color(0x14000000);
+  // 主畫面：近黑底
+  static const Color surface = Color(0xFF0A0B0D);
+  static const Color panel = Color(0xFF15171B);
+  static const Color road = Color(0xFF2B2F36);
+  static const Color hairline = Color(0x24FFFFFF);
 
-  static const Color ink = Color(0xFF14161A);
-  static const Color inkDim = Color(0xFF6B7280);
-  static const Color inkFaint = Color(0xFFA8AEB8);
+  static const Color ink = Color(0xFFFFFFFF);
+  static const Color inkDim = Color(0xFFA1A7B1);
+  static const Color inkFaint = Color(0xFF5E646E);
+
+  // 儀表指針綠
+  static const Color gauge = Color(0xFF6BD968);
 
   // 品牌色：僅用於浮動按鈕與模擬面板等互動元件
-  static const Color brand = Color(0xFF4A55E0);
-  static const Color brandDim = Color(0x1F4A55E0);
+  static const Color brand = Color(0xFF0066B1);
+  static const Color brandDim = Color(0x1F0066B1);
+
+  // M 三色（淺藍 / 深藍 / 紅）
+  static const Color mLightBlue = Color(0xFF81C4FF);
+  static const Color mBlue = Color(0xFF0066B1);
+  static const Color mRed = Color(0xFFE4002B);
 
   // 語意色：安全 / 注意 / 危險
-  static const Color safe = Color(0xFF2FAE60);
-  static const Color safeDim = Color(0x1F2FAE60);
-  static const Color warn = Color(0xFFF0A825);
-  static const Color warnDim = Color(0x24F0A825);
-  static const Color danger = Color(0xFFE13B32);
-  static const Color dangerDim = Color(0x1FE13B32);
+  static const Color safe = Color(0xFF3DD16F);
+  static const Color safeDim = Color(0x293DD16F);
+  static const Color warn = Color(0xFFF5B83A);
+  static const Color warnDim = Color(0x29F5B83A);
+  static const Color danger = Color(0xFFFF4B3E);
+  static const Color dangerDim = Color(0x29FF4B3E);
 }

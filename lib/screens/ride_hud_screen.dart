@@ -9,15 +9,17 @@ import '../models/vehicle_threat.dart';
 import '../services/alert_notification_service.dart';
 import '../services/ble_radar_service.dart';
 import '../theme/hud_colors.dart';
+import '../widgets/m_stripe.dart';
 import '../widgets/map_card.dart';
-import '../widgets/radar_view.dart';
+import '../widgets/road_view.dart';
 import '../widgets/simulation_sheet.dart';
+import '../widgets/speed_gauge.dart';
 
 /// HUD 的資料來源：藍牙（AMB82 板子）或手動模擬面板。
 enum RideHudMode { ble, simulation }
 
-/// 騎乘中的後方雷達 HUD 主畫面：白底車速讀數、警示文字、深色夜間地圖、
-/// 白底雷達視圖，左下角浮動按鈕開啟模擬控制面板。
+/// 騎乘中的後方雷達 HUD 主畫面：頂端 M 三色條、指針式車速儀表、警示文字、
+/// 地圖與虛擬道路檢視，左下角浮動按鈕開啟選單。
 class RideHudScreen extends StatefulWidget {
   const RideHudScreen({super.key, this.mode = RideHudMode.simulation});
 
@@ -278,6 +280,7 @@ class _RideHudScreenState extends State<RideHudScreen> {
     final threats = _threats;
     final alert = _activeAlert;
     final potholeAlertText = _potholeAlertText;
+    final speed = _isBle ? _gpsSpeed : _sim.bikeSpeed.round();
 
     // 一開始返回歡迎畫面（含手勢返回、斷線）就立刻撤銷 SnackBar，不等轉場動畫結束。
     return PopScope(
@@ -323,9 +326,10 @@ class _RideHudScreenState extends State<RideHudScreen> {
         body: SafeArea(
           child: Column(
             children: [
+              const MStripe(),
               // Android 的 heads-up 通知會蓋住最上方，預留空間避免擋到車速。
               if (Platform.isAndroid) const SizedBox(height: 48),
-              _StatusBar(speed: _isBle ? _gpsSpeed : _sim.bikeSpeed.round()),
+              SpeedGauge(speed: speed),
               _AlertLines(alert: hasData ? alert : null),
               _PotholeAlertLine(text: hasData ? potholeAlertText : null),
               const SizedBox(height: 14),
@@ -338,8 +342,9 @@ class _RideHudScreenState extends State<RideHudScreen> {
                 child:
                     !hasData
                         ? const Center(child: Text('尚無有效資料，雷達暫停顯示'))
-                        : RadarView(
+                        : RoadView(
                           threats: threats,
+                          speedKmh: (speed ?? 0).toDouble(),
                           potholeFrontLeft: _sim.potholeFrontLeft,
                           potholeFrontCenter: _sim.potholeFrontCenter,
                           potholeFrontRight: _sim.potholeFrontRight,
@@ -395,36 +400,6 @@ class _RawDataPanel extends StatelessWidget {
 }
 
 enum _HudMenu { simulation, disconnect }
-
-class _StatusBar extends StatelessWidget {
-  const _StatusBar({required this.speed});
-
-  final int? speed;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(22, 18, 22, 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.baseline,
-        textBaseline: TextBaseline.alphabetic,
-        children: [
-          Text(
-            speed?.toString() ?? '—',
-            style: textTheme.displayMedium?.copyWith(
-              fontWeight: FontWeight.w800,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
-          ),
-          const SizedBox(width: 6),
-          Text('km/h', style: textTheme.titleMedium),
-        ],
-      ),
-    );
-  }
-}
 
 /// 坑洞提示文字（除了系統通知外，畫面上也常駐顯示目前亮起的坑洞方向）。
 /// 樣式比照後方車輛逼近警示（Icon + 粗體文字），並固定保留一行高度，

@@ -80,7 +80,7 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   失敗時除了在按鈕下方顯示錯誤文字，也用 `AlertDialog`（可選取文字）顯示
   `BleRadarService.lastError` 的確切原因（含失敗階段與例外內容）；按鈕依
   `BleRadarService.status` 顯示搜尋中／連線中並停用。
-  畫面為全幅深色背景（`_WelcomeBackdrop`：聚光燈漸層、傾斜放大的自行車圖、上下壓暗漸層），左上為兩行標題（細體「騎得安心。」、粗體「自行車警示系統」），底部為白色方形「連線」按鈕與底邊 `MStripe`。
+  畫面為全幅深色背景（`_WelcomeBackdrop`：`assets/welcome.jpg` 自行車照片鋪在上方、底部漸層融入黑底、上方壓暗漸層），左上為兩行標題（細體「騎得安心。」、粗體「自行車警示系統」），底部為白色方形「連線」按鈕與底邊 `MStripe`。
   「使用模擬數據繼續」按鈕預設隱藏，長按「連線」按鈕才會顯示（僅存在
   `_showSimulation` 狀態，不持久化，重開 App 即恢復隱藏），按下後 push
   `RideHudScreen(mode: simulation)`。同一列旁邊還有「除錯模式：開／關」切換

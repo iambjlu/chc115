@@ -200,8 +200,8 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
   }
 }
 
-/// 歡迎頁背景：近黑底、聚光燈般的灰階漸層，自行車大幅裁切傾斜置於右側，
-/// 上下以漸層壓暗，讓標題與按鈕清楚可讀。
+/// 歡迎頁背景：自行車照片鋪在上方、底部漸層融入黑底，
+/// 上方另有壓暗漸層讓標題清楚可讀；底部留給按鈕。
 class _WelcomeBackdrop extends StatelessWidget {
   const _WelcomeBackdrop();
 
@@ -210,23 +210,15 @@ class _WelcomeBackdrop extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        const DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: RadialGradient(
-              center: Alignment(0.55, 0.15),
-              radius: 0.95,
-              colors: [Color(0xFF4A505A), HudColors.surface],
-            ),
-          ),
-        ),
-        Align(
-          alignment: const Alignment(0.7, 0.2),
-          child: FractionallySizedBox(
-            heightFactor: 0.7,
-            child: Transform.rotate(
-              angle: 0.35,
-              child: Image.asset('assets/bike.png', fit: BoxFit.contain),
-            ),
+        Positioned(
+          left: 0,
+          right: 0,
+          top: 0,
+          bottom: 150,
+          child: Image.asset(
+            'assets/welcome.jpg',
+            fit: BoxFit.cover,
+            alignment: const Alignment(-0.45, 0),
           ),
         ),
         const DecoratedBox(
@@ -234,8 +226,8 @@ class _WelcomeBackdrop extends StatelessWidget {
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [Color(0xCC000000), Color(0x00000000), Color(0x00000000), Color(0xF2000000)],
-              stops: [0, 0.3, 0.6, 0.9],
+              colors: [Color(0xCC000000), Color(0x00000000), Color(0x00000000), Color(0xFF0A0B0D), Color(0xFF0A0B0D)],
+              stops: [0, 0.3, 0.55, 0.82, 1],
             ),
           ),
         ),

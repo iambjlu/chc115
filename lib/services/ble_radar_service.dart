@@ -206,7 +206,7 @@ class BleRadarService {
 
   /// 解析一行 7 欄資料，欄位依序為：
   /// 左後距離、右後距離（0 沒車／1 遠／2 中／3 近）、左後逼近、右後逼近、
-  /// 左前坑、正前坑、右前坑（1 有／0 沒有）；任何欄位為 9 代表感測錯誤，
+  /// 左前、正前、右前（0 沒坑沒障礙／1 有坑／2 有障礙／3 有坑有障礙）；任何欄位為 9 代表感測錯誤，
   /// 整筆資料無效，不把舊值當成新資料。欄位以逗號分隔，也接受 7 個連續數字。
   /// 格式不符回傳 null。車速不在此協定內，沿用 [base.bikeSpeed]。
   @visibleForTesting
@@ -237,18 +237,18 @@ class BleRadarService {
     final right = distance(n[1]!);
     final la = flag(n[2]!);
     final ra = flag(n[3]!);
-    final pl = flag(n[4]!);
-    final pc = flag(n[5]!);
-    final pr = flag(n[6]!);
-    if ([left, right, la, ra, pl, pc, pr].contains(null)) return null;
+    final fl = FrontHazard.fromCode(n[4]!);
+    final fc = FrontHazard.fromCode(n[5]!);
+    final fr = FrontHazard.fromCode(n[6]!);
+    if ([left, right, la, ra, fl, fc, fr].contains(null)) return null;
     return base.copyWith(
       leftDistance: left,
       rightDistance: right,
       leftApproaching: la,
       rightApproaching: ra,
-      potholeFrontLeft: pl,
-      potholeFrontCenter: pc,
-      potholeFrontRight: pr,
+      frontLeft: fl,
+      frontCenter: fc,
+      frontRight: fr,
     );
   }
 

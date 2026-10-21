@@ -3,29 +3,30 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+import '../models/simulation_values.dart';
 import '../models/vehicle_threat.dart';
 import '../theme/hud_colors.dart';
 
 /// 虛擬道路檢視：鏡頭在自行車後上方往前看，自行車位於道路中間，
-/// 左右後方來車以立方體顯示在自行車後方的左右車道（距離越近越靠近車身），
-/// 前方坑洞以球體顯示。標記為「逼近中」的立方體上方會有硬切閃爍（無淡入淡出）
-/// 的黃色警示三角形，左右共用同一個時鐘，節奏永遠同步。
-/// 路面分隔線依車速往後捲動，營造行進感。
+/// 左右後方來車以立方體顯示在自行車後方的左右兩側（距離越近越靠近車身），
+/// 前方坑洞畫成路面上的坑、障礙物為三角錐。標記為「逼近中」的立方體會硬切閃爍
+/// （無淡入淡出），左右共用同一個時鐘，節奏永遠同步。
+/// 地面橫向格線依車速往後捲動，營造行進感（刻意不畫車道線）。
 class RoadView extends StatefulWidget {
   const RoadView({
     super.key,
     required this.threats,
     required this.speedKmh,
-    this.potholeFrontLeft = false,
-    this.potholeFrontCenter = false,
-    this.potholeFrontRight = false,
+    this.frontLeft = FrontHazard.none,
+    this.frontCenter = FrontHazard.none,
+    this.frontRight = FrontHazard.none,
   });
 
   final List<VehicleThreat> threats;
   final double speedKmh;
-  final bool potholeFrontLeft;
-  final bool potholeFrontCenter;
-  final bool potholeFrontRight;
+  final FrontHazard frontLeft;
+  final FrontHazard frontCenter;
+  final FrontHazard frontRight;
 
   @override
   State<RoadView> createState() => _RoadViewState();
@@ -34,17 +35,18 @@ class RoadView extends StatefulWidget {
 /// 單一時鐘：累計路面捲動距離與閃爍相位，painter 以它作為 repaint 來源，
 /// 不需每個 frame 重建整個 widget 樹。
 class _Clock extends ChangeNotifier {
-  double scroll = 0; // 公尺，0~dashPeriod
+  double scroll = 0; // 公尺，0~gridPeriod
   bool blinkVisible = true;
 
   void tick(double dt, double elapsedMs, double speedMps) {
-    scroll = (scroll + speedMps * dt) % _Cam.dashPeriod;
+    scroll = (scroll + speedMps * dt) % _Cam.gridPeriod;
     blinkVisible = (elapsedMs ~/ 220).isEven;
     notifyListeners();
   }
 }
 
-class _RoadViewState extends State<RoadView> with SingleTickerProviderStateMixin {
+class _RoadViewState extends State<RoadView>
+    with SingleTickerProviderStateMixin {
   final _clock = _Clock();
   late final Ticker _ticker;
   Duration _last = Duration.zero;
@@ -75,26 +77,30 @@ class _RoadViewState extends State<RoadView> with SingleTickerProviderStateMixin
         final bikeCenter = cam.p(0, 0, 0);
         final bikeHeight = _Cam.bikeLength * cam.scaleAt(0);
         final bikeWidth = bikeHeight * 542 / 1072;
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            CustomPaint(
-              painter: _RoadPainter(
-                clock: _clock,
-                potholeLeft: widget.potholeFrontLeft,
-                potholeCenter: widget.potholeFrontCenter,
-                potholeRight: widget.potholeFrontRight,
+        return ClipRect(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              CustomPaint(
+                painter: _RoadPainter(
+                  clock: _clock,
+                  frontLeft: widget.frontLeft,
+                  frontCenter: widget.frontCenter,
+                  frontRight: widget.frontRight,
+                ),
               ),
-            ),
-            Positioned(
-              left: bikeCenter.dx - bikeWidth / 2,
-              top: bikeCenter.dy - bikeHeight / 2,
-              width: bikeWidth,
-              height: bikeHeight,
-              child: Image.asset('assets/bike.png', fit: BoxFit.contain),
-            ),
-            CustomPaint(painter: _CarsPainter(clock: _clock, threats: widget.threats)),
-          ],
+              Positioned(
+                left: bikeCenter.dx - bikeWidth / 2,
+                top: bikeCenter.dy - bikeHeight / 2,
+                width: bikeWidth,
+                height: bikeHeight,
+                child: Image.asset('assets/bike.png', fit: BoxFit.contain),
+              ),
+              CustomPaint(
+                painter: _CarsPainter(clock: _clock, threats: widget.threats),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -102,25 +108,25 @@ class _RoadViewState extends State<RoadView> with SingleTickerProviderStateMixin
 }
 
 /// 針孔透視：世界座標 x 往右、h 往上、z 往前（公尺，自行車在原點），
-/// 鏡頭在自行車後方 [camBehind] 公尺、高度依版面算出，讓自行車落在畫面約 60% 高處。
+/// 鏡頭在自行車後方 [camBehind] 公尺、高度 [camHeight] 公尺（偏俯視），
+/// 地平線位置依版面算出，讓自行車落在畫面約 60% 高處。
 class _Cam {
   _Cam(Size size)
-      : cx = size.width / 2,
-        f = size.width * 7,
-        yh = size.height * 0.03 {
-    hc = (size.height * 0.60 - yh) * camBehind / f;
-  }
+    : cx = size.width / 2,
+      f = size.width * 7,
+      yh = size.height * 0.60 - size.width * 7 * camHeight / camBehind;
 
   static const double camBehind = 100;
-  static const double dashPeriod = 6;
-  static const double bikeLength = 4.0;
-  static const double laneX = 3; // 左右車道中心
-  static const double roadHalf = 4.5;
+  static const double camHeight = 20;
+  static const double gridPeriod = 6;
+  static const double bikeLength = 2.4;
+  static const double laneX = 3; // 左右來車的橫向位置
+  static const double roadHalf = 5.2;
 
   final double cx;
   final double f;
   final double yh;
-  late final double hc;
+  double get hc => camHeight;
 
   Offset p(double x, double h, double z) {
     final dz = z + camBehind;
@@ -129,6 +135,8 @@ class _Cam {
 
   double scaleAt(double z) => f / (z + camBehind);
 }
+
+const _obstacle = Color(0xFFFF6A1F);
 
 Path _poly(List<Offset> pts) {
   final path = Path()..moveTo(pts.first.dx, pts.first.dy);
@@ -140,21 +148,23 @@ Path _poly(List<Offset> pts) {
 
 Color _shade(Color c, double lightnessDelta) {
   final hsl = HSLColor.fromColor(c);
-  return hsl.withLightness((hsl.lightness + lightnessDelta).clamp(0.0, 1.0)).toColor();
+  return hsl
+      .withLightness((hsl.lightness + lightnessDelta).clamp(0.0, 1.0))
+      .toColor();
 }
 
 class _RoadPainter extends CustomPainter {
   _RoadPainter({
     required this.clock,
-    required this.potholeLeft,
-    required this.potholeCenter,
-    required this.potholeRight,
+    required this.frontLeft,
+    required this.frontCenter,
+    required this.frontRight,
   }) : super(repaint: clock);
 
   final _Clock clock;
-  final bool potholeLeft;
-  final bool potholeCenter;
-  final bool potholeRight;
+  final FrontHazard frontLeft;
+  final FrontHazard frontCenter;
+  final FrontHazard frontRight;
 
   static const _zNear = -60.0;
   static const _zFar = 3000.0;
@@ -174,38 +184,29 @@ class _RoadPainter extends CustomPainter {
       Paint()..color = HudColors.road,
     );
 
-    final edge = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
-      ..color = HudColors.ink.withValues(alpha: 0.55);
-    for (final x in [-half, half]) {
-      canvas.drawLine(cam.p(x, 0, _zNear), cam.p(x, 0, _zFar), edge);
+    // 不畫車道線（避免誤導成三車道視野）；改用橫向淡色格線依車速往鏡頭方向捲動，
+    // 只表現地面與行進感。
+    final grid =
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2
+          ..color = HudColors.ink.withValues(alpha: 0.10);
+    for (var k = -12; k < 80; k++) {
+      final z = k * _Cam.gridPeriod - clock.scroll;
+      if (z < _zNear) continue;
+      canvas.drawLine(cam.p(-half, 0, z), cam.p(half, 0, z), grid);
     }
 
-    // 車道分隔虛線，依車速往鏡頭方向（z 變小）捲動。
-    final dash = Paint()..color = HudColors.ink.withValues(alpha: 0.7);
-    for (var k = -12; k < 50; k++) {
-      final z0 = k * _Cam.dashPeriod - clock.scroll;
-      final z1 = z0 + _Cam.dashPeriod / 2;
-      if (z1 < _zNear) continue;
-      for (final x in [-_Cam.laneX / 2, _Cam.laneX / 2]) {
-        canvas.drawPath(
-          _poly([
-            cam.p(x - 0.07, 0, z0),
-            cam.p(x + 0.07, 0, z0),
-            cam.p(x + 0.07, 0, z1),
-            cam.p(x - 0.07, 0, z1),
-          ]),
-          dash,
-        );
-      }
+    // 前方路況，左前 / 正前 / 右前：坑洞是畫在路面上的坑、障礙物是橘色三角錐，
+    // 兩者並存時障礙物放在坑洞更前方。由遠到近繪製。
+    const slots = [(-2.8, 0), (0.0, 1), (2.8, 2)];
+    final hazards = [frontLeft, frontCenter, frontRight];
+    for (final (x, i) in slots) {
+      if (hazards[i].hasObstacle) _cone(canvas, cam, x, 22);
     }
-
-    // 前方坑洞：球體，左前 / 正前 / 右前。
-    const potholeZ = 14.0;
-    if (potholeLeft) _sphere(canvas, cam, -1.5, potholeZ);
-    if (potholeCenter) _sphere(canvas, cam, 0, potholeZ);
-    if (potholeRight) _sphere(canvas, cam, 1.5, potholeZ);
+    for (final (x, i) in slots) {
+      if (hazards[i].hasPothole) _pit(canvas, cam, x, 12);
+    }
 
     // 遠端淡出到背景色，避免道路在地平線硬切。
     final fadeRect = Rect.fromLTWH(0, 0, size.width, size.height * 0.4);
@@ -220,71 +221,167 @@ class _RoadPainter extends CustomPainter {
     );
   }
 
-  void _sphere(Canvas canvas, _Cam cam, double x, double z) {
-    const radius = 0.7;
-    final c = cam.p(x, radius, z);
-    final r = radius * cam.scaleAt(z);
-    final ground = cam.p(x, 0, z);
+  void _cone(Canvas canvas, _Cam cam, double x, double z) {
+    const baseHalf = 0.55;
+    const height = 1.3;
+    final left = cam.p(x - baseHalf, 0, z);
+    final right = cam.p(x + baseHalf, 0, z);
+    final apex = cam.p(x, height, z);
+    final scale = cam.scaleAt(z);
     canvas.drawOval(
-      Rect.fromCenter(center: ground, width: r * 2.2, height: r * 0.7),
+      Rect.fromCenter(
+        center: Offset(cam.p(x, 0, z).dx + scale * 0.15, cam.p(x, 0, z).dy),
+        width: scale * baseHalf * 2.6,
+        height: scale * 0.5,
+      ),
       Paint()..color = const Color(0x66000000),
     );
-    canvas.drawCircle(
-      c,
-      r,
+    final body =
+        Path()
+          ..moveTo(left.dx, left.dy)
+          ..lineTo(apex.dx, apex.dy)
+          ..lineTo(right.dx, right.dy)
+          ..close();
+    canvas.drawPath(
+      body,
       Paint()
-        ..shader = RadialGradient(
-          center: const Alignment(-0.35, -0.4),
-          colors: [_shade(HudColors.warn, 0.25), HudColors.warn, _shade(HudColors.warn, -0.3)],
-          stops: const [0, 0.55, 1],
-        ).createShader(Rect.fromCircle(center: c, radius: r)),
+        ..shader = LinearGradient(
+          colors: [
+            _shade(_obstacle, 0.12),
+            _obstacle,
+            _shade(_obstacle, -0.22),
+          ],
+        ).createShader(Rect.fromPoints(left, right)),
+    );
+    // 白色反光條
+    final y1 = 0.42, y2 = 0.7;
+    double half(double h) => baseHalf * (1 - h / height);
+    final band =
+        Path()
+          ..moveTo(cam.p(x - half(y1), y1, z).dx, cam.p(x, y1, z).dy)
+          ..lineTo(cam.p(x - half(y2), y2, z).dx, cam.p(x, y2, z).dy)
+          ..lineTo(cam.p(x + half(y2), y2, z).dx, cam.p(x, y2, z).dy)
+          ..lineTo(cam.p(x + half(y1), y1, z).dx, cam.p(x, y1, z).dy)
+          ..close();
+    canvas.drawPath(band, Paint()..color = Colors.white.withValues(alpha: 0.9));
+  }
+
+  /// 坑洞：畫在路面上的一個坑——黃色外框加較亮的坑緣，內部是由遠端坑壁（亮）
+  /// 漸層到坑底（近黑），不會與灰色路面融為一體。
+  void _pit(Canvas canvas, _Cam cam, double x, double z) {
+    // 地面在畫面上被透視壓扁，z 方向放大約 2 倍，坑看起來才像坑而不是細環。
+    const zStretch = 2.0;
+    Path ring(double r, [double dz = 0]) {
+      final pts = [
+        for (var i = 0; i < 36; i++)
+          cam.p(
+            x + r * math.cos(i * math.pi / 18),
+            0,
+            z + dz + zStretch * r * math.sin(i * math.pi / 18),
+          ),
+      ];
+      return _poly(pts);
+    }
+
+    final rim = ring(1.0);
+    canvas.drawPath(rim, Paint()..color = const Color(0xFF555B66));
+    canvas.drawPath(
+      rim,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5
+        ..strokeJoin = StrokeJoin.round
+        ..color = HudColors.warn,
+    );
+    final hole = ring(0.74);
+    final bounds = hole.getBounds();
+    canvas.drawPath(
+      hole,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF454B55), Color(0xFF0B0C0F), Color(0xFF020203)],
+          stops: [0, 0.45, 1],
+        ).createShader(bounds),
     );
   }
 
   @override
   bool shouldRepaint(covariant _RoadPainter old) =>
-      old.potholeLeft != potholeLeft ||
-      old.potholeCenter != potholeCenter ||
-      old.potholeRight != potholeRight;
+      old.frontLeft != frontLeft ||
+      old.frontCenter != frontCenter ||
+      old.frontRight != frontRight;
 }
 
 class _CarsPainter extends CustomPainter {
-  _CarsPainter({required this.clock, required this.threats}) : super(repaint: clock);
+  _CarsPainter({required this.clock, required this.threats})
+    : super(repaint: clock);
 
   final _Clock clock;
   final List<VehicleThreat> threats;
 
-  static const _cubeSize = 1.6;
+  static const _cubeSize = 1.2;
 
   Color _colorFor(ThreatLevel level) => switch (level) {
-        ThreatLevel.safe => HudColors.safe,
-        ThreatLevel.caution => HudColors.warn,
-        ThreatLevel.danger => HudColors.danger,
-      };
+    ThreatLevel.safe => HudColors.safe,
+    ThreatLevel.caution => HudColors.warn,
+    ThreatLevel.danger => HudColors.danger,
+  };
 
   @override
   void paint(Canvas canvas, Size size) {
     final cam = _Cam(size);
+    // 方塊最靠近車身的位置：頂面前緣不可高過自行車中心（畫面上不超過車身）。
+    final nearest =
+        cam.f * (cam.hc - _cubeSize) / (cam.p(0, 0, 0).dy - cam.yh) -
+        _Cam.camBehind;
     for (final t in threats) {
       final left = t.side == ThreatSide.left;
       final x = left ? -_Cam.laneX : _Cam.laneX;
-      // 方塊前緣離自行車 distanceMeters，向鏡頭方向延伸一個方塊長度。
-      final zFar = -t.distanceMeters;
-      final zNear = zFar - _cubeSize;
-      _cube(canvas, cam, x, zFar, zNear, _colorFor(t.level), left);
-      if (t.isApproaching && clock.blinkVisible) {
-        _triangle(canvas, cam, x, (zFar + zNear) / 2);
+      // 距離遠（安全）時不顯示方塊。
+      if (t.level != ThreatLevel.safe) {
+        // 前緣離車尾 distanceMeters*0.9 公尺，並不超過 nearest 限制。
+        final zFar = math.min(
+          -(_Cam.bikeLength / 2 + t.distanceMeters * 0.9),
+          nearest,
+        );
+        // 逼近中：方塊硬切閃爍（左右共用同一個時鐘，節奏同步）。
+        if (!t.isApproaching || clock.blinkVisible) {
+          _cube(
+            canvas,
+            cam,
+            x,
+            zFar,
+            zFar - _cubeSize,
+            _colorFor(t.level),
+            left,
+          );
+        }
       }
     }
   }
 
-  void _cube(Canvas canvas, _Cam cam, double cx, double zFar, double zNear, Color base, bool left) {
+  void _cube(
+    Canvas canvas,
+    _Cam cam,
+    double cx,
+    double zFar,
+    double zNear,
+    Color base,
+    bool left,
+  ) {
     const s = _cubeSize;
     final x0 = cx - s / 2;
     final x1 = cx + s / 2;
     // 地面陰影
     canvas.drawPath(
-      _poly([cam.p(x0, 0, zFar), cam.p(x1, 0, zFar), cam.p(x1, 0, zNear), cam.p(x0, 0, zNear)]),
+      _poly([
+        cam.p(x0, 0, zFar),
+        cam.p(x1, 0, zFar),
+        cam.p(x1, 0, zNear),
+        cam.p(x0, 0, zNear),
+      ]),
       Paint()..color = const Color(0x55000000),
     );
     final sideX = left ? x1 : x0; // 朝向道路中心的側面
@@ -298,31 +395,23 @@ class _CarsPainter extends CustomPainter {
       Paint()..color = _shade(base, -0.22),
     );
     canvas.drawPath(
-      _poly([cam.p(x0, 0, zNear), cam.p(x1, 0, zNear), cam.p(x1, s, zNear), cam.p(x0, s, zNear)]),
+      _poly([
+        cam.p(x0, 0, zNear),
+        cam.p(x1, 0, zNear),
+        cam.p(x1, s, zNear),
+        cam.p(x0, s, zNear),
+      ]),
       Paint()..color = base,
     );
     canvas.drawPath(
-      _poly([cam.p(x0, s, zFar), cam.p(x1, s, zFar), cam.p(x1, s, zNear), cam.p(x0, s, zNear)]),
+      _poly([
+        cam.p(x0, s, zFar),
+        cam.p(x1, s, zFar),
+        cam.p(x1, s, zNear),
+        cam.p(x0, s, zNear),
+      ]),
       Paint()..color = _shade(base, 0.18),
     );
-  }
-
-  void _triangle(Canvas canvas, _Cam cam, double x, double z) {
-    final c = cam.p(x, _cubeSize + 0.9, z);
-    final side = 1.1 * cam.scaleAt(z);
-    final path = Path()
-      ..moveTo(c.dx, c.dy - side * 0.5)
-      ..lineTo(c.dx - side * 0.55, c.dy + side * 0.45)
-      ..lineTo(c.dx + side * 0.55, c.dy + side * 0.45)
-      ..close();
-    canvas.drawPath(path, Paint()..color = HudColors.warn);
-    // 驚嘆號
-    final mark = Paint()
-      ..color = HudColors.surface
-      ..strokeWidth = math.max(2, side * 0.1)
-      ..strokeCap = StrokeCap.round;
-    canvas.drawLine(Offset(c.dx, c.dy - side * 0.12), Offset(c.dx, c.dy + side * 0.17), mark);
-    canvas.drawCircle(Offset(c.dx, c.dy + side * 0.32), mark.strokeWidth / 2, mark);
   }
 
   @override

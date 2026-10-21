@@ -11,18 +11,18 @@ enum HazardCategory {
   pothole, // 坑洞：左前/正前/右前共用同一則通知
   approaching, // 逼近車輛：左右後方共用同一則通知
   distanceShortening, // 距離縮短：左右後方共用同一則通知
+  obstacle, // 障礙物：左前/正前/右前共用同一則通知
 }
 
 /// 坑洞、障礙物、車輛逼近等危險事件的警示單例。
 ///
-/// Android：走 `flutter_local_notifications` 系統通知（max importance + heads-up）。
-/// iOS：實測發現即使已授權，前景時系統通知橫幅仍時常不會顯示（`timeSensitive`
-/// 等級需要額外的時效性通知 entitlement，一般權限也無法保證前景橫幅一定跳出），
-/// 因此 iOS 完全不申請通知權限、不使用 `UNUserNotificationCenter`，改用
-/// `audioplayers` 播放內建的 `assets/sounds/alert.wav` 提示音——音訊 session
-/// 類別設為 `playback`，即使手機切成靜音（響鈴/靜音切換鍵）也會照常出聲，
-/// 這點 `SystemSound.play()` 做不到（一定會被靜音鍵靜音）。畫面上則由
-/// `RideHudScreen` 改用 SnackBar 顯示在畫面底部，取代系統通知橫幅。
+/// 提示音一律由 App 自己播放（`audioplayers` 播放內建的 `assets/sounds/alert.wav`），
+/// 不使用系統通知的聲音：音訊 session 設為 `playback`，iOS 即使手機切成靜音
+/// （響鈴/靜音切換鍵）也會照常出聲。
+/// Android：仍會發出系統通知（max importance + heads-up）顯示文字，但通知頻道
+/// 為無聲（`playSound: false`），聲音交給 App 播放。
+/// iOS：不申請通知權限、不使用 `UNUserNotificationCenter`（前景時系統通知橫幅
+/// 不一定會顯示），畫面上由 `RideHudScreen` 改用 SnackBar 顯示。
 /// 兩平台都搭配一段較長的觸覺震動（連續多次 `heavyImpact`），讓騎士即使
 /// 沒看螢幕也能感知警示。
 class AlertNotificationService {
@@ -30,26 +30,31 @@ class AlertNotificationService {
 
   static final AlertNotificationService instance = AlertNotificationService._();
 
-  static const _channelId = 'ride_hazard_alerts';
+  // 舊的 'ride_hazard_alerts' 頻道建立時帶有通知音，頻道設定建立後無法修改，
+  // 因此改用新的無聲頻道 id，並在 init() 刪除舊頻道。
+  static const _legacyChannelId = 'ride_hazard_alerts';
+  static const _channelId = 'ride_hazard_alerts_silent';
   static const _channelName = '騎乘危險警示';
   static const _channelDescription = '坑洞、障礙物與車輛逼近的即時警示通知';
   static const _alertSoundAsset = 'sounds/alert.wav';
 
   final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
-  final AudioPlayer _iosPlayer = AudioPlayer();
+  final AudioPlayer _player = AudioPlayer();
 
   Future<void> init() async {
-    if (Platform.isIOS) {
-      // playback 類別會忽略手機的靜音切換鍵，確保警示音一定聽得到。
-      await _iosPlayer.setAudioContext(
-        AudioContext(iOS: AudioContextIOS(category: AVAudioSessionCategory.playback)),
-      );
-      return; // iOS 不使用系統通知，見上方類別註解。
-    }
+    // playback 類別會忽略 iOS 的靜音切換鍵，確保警示音一定聽得到。
+    await _player.setAudioContext(
+      AudioContext(iOS: AudioContextIOS(category: AVAudioSessionCategory.playback)),
+    );
+    if (Platform.isIOS) return; // iOS 不使用系統通知，見上方類別註解。
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     await _plugin.initialize(
       settings: const InitializationSettings(android: androidInit),
     );
+
+    await _plugin
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.deleteNotificationChannel(channelId: _legacyChannelId);
 
     await _plugin
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
@@ -59,7 +64,7 @@ class AlertNotificationService {
             _channelName,
             description: _channelDescription,
             importance: Importance.max,
-            playSound: true,
+            playSound: false, // 提示音由 App 播放
             enableVibration: false, // 震動由 HapticFeedback 統一觸發，避免重複震動
           ),
         );
@@ -71,16 +76,16 @@ class AlertNotificationService {
 
   // Android：用同一個 category 固定同一個通知 id 呼叫 _plugin.show，讓新通知
   // 直接覆蓋舊通知，達到「該類別只保留最新一則」的效果。
-  // iOS：不發系統通知，只播放提示音＋較長震動（前景/背景皆會觸發）；畫面上的
-  // SnackBar 由呼叫端（RideHudScreen）另外處理，因為此服務沒有 BuildContext。
+  // 兩平台都由 App 播放提示音；iOS 不發系統通知，畫面上的 SnackBar 由呼叫端
+  // （RideHudScreen）另外處理，因為此服務沒有 BuildContext。
   Future<void> notifyHazard({
     required HazardCategory category,
     required String title,
     required String body,
   }) async {
+    await _player.stop();
+    unawaited(_player.play(AssetSource(_alertSoundAsset)));
     if (Platform.isIOS) {
-      await _iosPlayer.stop();
-      unawaited(_iosPlayer.play(AssetSource(_alertSoundAsset)));
       await _longVibration();
       return;
     }
@@ -91,7 +96,7 @@ class AlertNotificationService {
       channelDescription: _channelDescription,
       importance: Importance.max,
       priority: Priority.max,
-      playSound: true,
+      playSound: false,
       category: AndroidNotificationCategory.alarm,
       visibility: NotificationVisibility.public,
     );

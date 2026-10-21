@@ -2,6 +2,29 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+/// 深色地圖樣式（Google Maps 官方 night 樣式的精簡版）。
+const _darkMapStyle = '''
+[
+  {"elementType":"geometry","stylers":[{"color":"#1d2127"}]},
+  {"elementType":"labels.icon","stylers":[{"visibility":"off"}]},
+  {"elementType":"labels.text.fill","stylers":[{"color":"#8d96a3"}]},
+  {"elementType":"labels.text.stroke","stylers":[{"color":"#1d2127"}]},
+  {"featureType":"administrative","elementType":"geometry","stylers":[{"color":"#2f353d"}]},
+  {"featureType":"administrative.land_parcel","stylers":[{"visibility":"off"}]},
+  {"featureType":"poi","elementType":"geometry","stylers":[{"color":"#222831"}]},
+  {"featureType":"poi","elementType":"labels.text.fill","stylers":[{"color":"#6f7885"}]},
+  {"featureType":"poi.park","elementType":"geometry","stylers":[{"color":"#1c2a24"}]},
+  {"featureType":"road","elementType":"geometry","stylers":[{"color":"#2d333c"}]},
+  {"featureType":"road","elementType":"geometry.stroke","stylers":[{"color":"#1d2127"}]},
+  {"featureType":"road","elementType":"labels.text.fill","stylers":[{"color":"#9aa3af"}]},
+  {"featureType":"road.arterial","elementType":"geometry","stylers":[{"color":"#363d47"}]},
+  {"featureType":"road.highway","elementType":"geometry","stylers":[{"color":"#434b57"}]},
+  {"featureType":"transit","elementType":"geometry","stylers":[{"color":"#252b33"}]},
+  {"featureType":"water","elementType":"geometry","stylers":[{"color":"#0e1318"}]},
+  {"featureType":"water","elementType":"labels.text.fill","stylers":[{"color":"#4b5563"}]}
+]
+''';
+
 /// 即時 Google 地圖，鏡頭置中於裝置目前位置，並用地圖原生的
 /// 「顯示目前位置」藍點（myLocationEnabled）標示自身位置。右下角有一個
 /// 「回到目前位置」按鈕，可在拖曳地圖後重新置中。
@@ -75,12 +98,13 @@ class _LiveGoogleMapState extends State<LiveGoogleMap> {
   Widget build(BuildContext context) {
     final initialPosition = _initialPosition;
     if (initialPosition == null) {
-      return const ColoredBox(color: Colors.white, child: Center(child: CircularProgressIndicator()));
+      return const ColoredBox(color: Color(0xFF1D2127), child: Center(child: CircularProgressIndicator()));
     }
     return Stack(
       alignment: Alignment.bottomRight,
       children: [
         GoogleMap(
+          style: _darkMapStyle,
           initialCameraPosition: CameraPosition(target: initialPosition, zoom: _zoom),
           onMapCreated: (controller) => _controller = controller,
           myLocationEnabled: _locationGranted,

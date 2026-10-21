@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../services/ble_radar_service.dart';
 import '../theme/hud_colors.dart';
-import '../widgets/m_stripe.dart';
+import '../widgets/hud_dialog.dart';
 import 'ride_hud_screen.dart';
 
 /// 啟動後的歡迎畫面：按「連線」搜尋並連上 AMB82 雷達模組後進入 HUD（藍牙數據），
@@ -20,7 +20,6 @@ class WelcomeScreen extends StatefulWidget {
 
 class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserver {
   final _ble = BleRadarService.instance;
-  String? _error;
   bool _showSimulation = false;
   // 只有真正進入背景（paused）才算「離開」；下拉通知列、系統對話框只會 inactive，不處理。
   bool _wasPaused = false;
@@ -62,30 +61,17 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
   }
 
   Future<void> _connect() async {
-    setState(() => _error = null);
     await _ble.connect();
     if (!mounted) return;
     if (_ble.status.value == BleRadarStatus.connected) {
       await _openHud(RideHudMode.ble);
     } else {
-      final error = _ble.lastError.value ?? '連線未完成，請重試';
-      setState(() => _error = error);
-      await _showError(error);
+      await _showError(_ble.lastError.value ?? '連線未完成，請重試');
     }
   }
 
-  Future<void> _showError(String error) {
-    return showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('藍牙連線失敗'),
-        content: SingleChildScrollView(child: SelectableText(error)),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('確定')),
-        ],
-      ),
-    );
-  }
+  Future<void> _showError(String error) =>
+      showHudDialog(context, title: '藍牙連線失敗', message: error);
 
   Future<void> _openHud(RideHudMode mode) async {
     await Navigator.of(context).push(
@@ -123,19 +109,10 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        SizedBox(height: MediaQuery.sizeOf(context).height * 0.1),
+                        SizedBox(height: MediaQuery.sizeOf(context).height * 0.02),
                         Text('騎得安心。', style: titleStyle?.copyWith(fontWeight: FontWeight.w300)),
                         Text('自行車警示系統', style: titleStyle?.copyWith(fontWeight: FontWeight.w800)),
                         const Spacer(),
-                        SizedBox(
-                          height: 72,
-                          width: double.infinity,
-                          child: _error == null
-                              ? null
-                              : Text(_error!,
-                                  textAlign: TextAlign.center,
-                                  style: textTheme.bodySmall?.copyWith(color: HudColors.danger)),
-                        ),
                         SizedBox(
                           width: double.infinity,
                           height: 56,
@@ -192,7 +169,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> with WidgetsBindingObserv
                 ),
               ),
             ),
-            const Positioned(left: 0, right: 0, bottom: 0, child: MStripe()),
           ],
         ),
       ),

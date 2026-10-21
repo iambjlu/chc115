@@ -5,8 +5,8 @@
 `chc115` 是一個 Flutter 行動應用，實作「騎乘後方雷達 HUD」（Ride HUD）：
 畫面上半部顯示指針式車速儀表與 Google 地圖（依裝置目前位置置中），
 下半部則以虛擬道路檢視呈現左右後方來車的威脅程度（安全／注意／危險）與
-前方坑洞路況預警。左下角浮動按鈕可開啟「模擬控制面板」，用來手動調整
-車速、左右後方車距／是否逼近、前方坑洞開關等數值，方便在沒有真實感測
+前方路況（坑洞、障礙物）預警。左下角浮動按鈕可開啟「模擬控制面板」，用來手動調整
+車速、左右後方車距／是否逼近、前方三個方向的路況等數值，方便在沒有真實感測
 硬體的情況下展示與測試 HUD 的各種狀態。
 
 - 平台：Flutter App（Android、iOS）
@@ -30,7 +30,7 @@ chc115/
 │   │   ├── live_google_map.dart
 │   │   ├── road_view.dart
 │   │   ├── speed_gauge.dart
-│   │   ├── m_stripe.dart
+│   │   ├── hud_dialog.dart
 │   │   └── simulation_sheet.dart
 │   ├── services/                # 與 UI 無關的服務層
 │   │   ├── alert_notification_service.dart
@@ -65,7 +65,7 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
 ### models（資料模型）
 
 - **`SimulationValues`**：不可變（`@immutable`）的模擬面板狀態，包含
-  自身車速、左右後方距離與是否逼近、前方三個方向的坑洞開關。提供
+  自身車速、左右後方距離與是否逼近、前方三個方向（左前／正前／右前）的路況 `FrontHazard`（無／坑洞／障礙物／坑洞加障礙物，`code` 對應 BLE 的 0／1／2／3，另有 `hasPothole`／`hasObstacle`）。提供
   `copyWith` 供局部更新，並附帶 `demo` 常數作為初始展示資料。
 - **`VehicleThreat`**：依「距離＋是否逼近」推導出的後方車輛威脅資訊。
   - `ThreatThresholds`：安全／注意／危險的距離門檻常數。
@@ -77,10 +77,10 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
 
 - **`WelcomeScreen`**：App 首頁（`MaterialApp.home`）。「連線」按鈕呼叫
   `BleRadarService.connect()`，成功則 push `RideHudScreen(mode: ble)`，
-  失敗時除了在按鈕下方顯示錯誤文字，也用 `AlertDialog`（可選取文字）顯示
+  失敗時只用 `showHudDialog`（可選取文字）顯示
   `BleRadarService.lastError` 的確切原因（含失敗階段與例外內容）；按鈕依
   `BleRadarService.status` 顯示搜尋中／連線中並停用。
-  畫面為全幅深色背景（`_WelcomeBackdrop`：`assets/welcome.jpg` 自行車照片鋪在上方、底部漸層融入黑底、上方壓暗漸層），左上為兩行標題（細體「騎得安心。」、粗體「自行車警示系統」），底部為白色方形「連線」按鈕與底邊 `MStripe`。
+  畫面為全幅深色背景（`_WelcomeBackdrop`：`assets/welcome.jpg` 自行車照片鋪在上方、底部漸層融入黑底、上方壓暗漸層），左上為兩行標題（細體「騎得安心。」、粗體「自行車警示系統」），底部為白色方形「連線」按鈕。
   「使用模擬數據繼續」按鈕預設隱藏，長按「連線」按鈕才會顯示（僅存在
   `_showSimulation` 狀態，不持久化，重開 App 即恢復隱藏），按下後 push
   `RideHudScreen(mode: simulation)`。同一列旁邊還有「除錯模式：開／關」切換
@@ -114,9 +114,11 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
       正在逼近中」，只敘述目前狀態、不含變換車道等行動建議。
       畫面上的 `_AlertLines` 警示文字則只顯示
       「{左／右／左右}後方車輛快速逼近」單行狀態敘述，與通知內容分開。
-    - 坑洞（`HazardCategory.pothole`）：左前/正前/右前皆由假變真才
-      觸發一次，避免同一坑洞持續開啟時反覆通知；三個方向共用同一個
+    - 坑洞（`HazardCategory.pothole`）：左前/正前/右前的 `hasPothole` 由無變有才
+      觸發一次，避免同一坑洞持續存在時反覆通知；三個方向共用同一個
       通知 id，因此只會保留最新觸發的那一個方向。
+    - 障礙物（`HazardCategory.obstacle`）：`hasObstacle` 由無變有才觸發一次，標題為
+      「前方左側／中央／右側障礙物」，三個方向共用同一個通知 id。
   - 以 `RideHudMode`（`ble`／`simulation`）決定資料來源。`ble` 模式初始為
     `SimulationValues.empty`（全部安全、車速 0），`initState()` 訂閱
     `BleRadarService.values`，收到的數據（車速沿用目前值）直接餵給
@@ -136,11 +138,10 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
     列出原始資料，可解析為綠字、無法解析為紅字。
   - Android 上 `SpeedGauge` 之上固定多一個 48dp 的 `SizedBox`，避免 heads-up
     系統通知橫幅蓋住車速讀數（iOS 不用系統通知，不需要）。
-  - 畫面頂端為 `MStripe`（M 三色條），接著是 `SpeedGauge`（車速儀表）；內含兩個私有元件：`_AlertLines`
+  - 畫面頂端是 `SpeedGauge`（車速儀表）；內含兩個私有元件：`_AlertLines`
     （後方車輛逼近警示，一行 `Icon(Icons.warning_rounded)` + 粗體文字）
     與 `_PotholeAlertLine`（坑洞提示文字，依左前/正前/右前順序列出
-    目前亮起的方向，多個方向以「、」分隔，格式如「請注意左前、正前
-    坑洞」；與系統通知並行顯示，樣式比照 `_AlertLines`）。這兩個提示
+    目前有路況的方向，格式如「請注意左前坑洞、正前障礙物」（同方向兩者並存為「坑洞及障礙物」）；與系統通知並行顯示，樣式比照 `_AlertLines`）。這兩個提示
     元件皆固定保留一行高度、以 `AnimatedOpacity` 做淡入淡出（沒有提示
     時文字改為單一空白字元、opacity 降為 0），而非用 `AnimatedSize`
     整塊展開/收合，避免提示出現/消失時造成下方 `MapCard`／道路檢視
@@ -151,29 +152,27 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
 - **`HazardCategory`**（`enum`）：`pothole` / `approaching` /
   `distanceShortening` 三個危險事件類別，其 `index` 直接作為
   `flutter_local_notifications`（僅 Android 使用）的通知 id。
-- **`AlertNotificationService`**：坑洞、車輛逼近等危險事件的提示單例
-  （`instance`），Android 與 iOS 走完全不同路徑：
-  - **Android**：`main.dart` 於 `runApp` 前呼叫 `init()` 建立通知頻道
-    （`Importance.max` + 有聲音）並請求通知權限；`notifyHazard(
-    {category, title, body})` 用 `flutter_local_notifications` 以
-    `id: category.index` 顯示高優先權通知（heads-up）並搭配一次
-    `HapticFeedback.heavyImpact()` 震動。由於同一 `category` 固定使用
-    同一個通知 id，新通知會直接覆蓋舊通知，因此每個類別（坑洞／逼近
-    車輛／距離縮短）在系統通知列表中永遠只會保留最新一則。
-  - **iOS**：完全不使用 `UNUserNotificationCenter`、不申請通知權限
-    （`init()` 對 iOS 直接 no-op，僅設定 `AudioPlayer`（`audioplayers`
-    套件）的 `AudioContext` 為 `AVAudioSessionCategory.playback`，讓警示音
-    忽略手機的靜音切換鍵）。原因是實測發現即使通知權限已授權，App 在
-    前景時系統通知橫幅仍經常不會顯示（`interruptionLevel: timeSensitive`
-    需要額外的時效性通知 entitlement，一般權限也無法保證前景橫幅一定
-    跳出），因此改為 `notifyHazard()` 在 iOS 上直接用 `AudioPlayer`
-    播放內建的 `assets/sounds/alert.wav`（取代原本會被靜音鍵靜音的
-    `SystemSound.play()`），不再顯示任何系統通知橫幅；畫面提示改由
+- **`AlertNotificationService`**：坑洞、障礙物、車輛逼近等危險事件的提示單例
+  （`instance`）。**提示音一律由 App 自己播放**：用 `audioplayers` 的 `AudioPlayer`
+  播放內建的 `assets/sounds/alert.wav`（每次先 `stop()` 再播放），`init()` 將
+  `AudioContext` 設為 `AVAudioSessionCategory.playback`，iOS 即使切成靜音也會出聲；
+  系統通知本身不再帶聲音。兩平台的畫面提示路徑不同：
+  - **Android**：`main.dart` 於 `runApp` 前呼叫 `init()` 建立**無聲**通知頻道
+    `ride_hazard_alerts_silent`（`Importance.max`、`playSound: false`，並刪除舊的
+    有聲頻道 `ride_hazard_alerts`，因為頻道設定建立後無法修改）並請求通知權限；
+    `notifyHazard({category, title, body})` 用 `flutter_local_notifications` 以
+    `id: category.index` 顯示高優先權通知（heads-up，僅顯示文字），同時由 App 播放提示音
+    並搭配長震動。由於同一 `category` 固定使用同一個通知 id，新通知會直接覆蓋舊通知，
+    因此每個類別（坑洞／障礙物／逼近車輛／距離縮短）在系統通知列表中永遠只會保留最新一則。
+  - **iOS**：完全不使用 `UNUserNotificationCenter`、不申請通知權限。原因是實測發現
+    即使通知權限已授權，App 在前景時系統通知橫幅仍經常不會顯示
+    （`interruptionLevel: timeSensitive` 需要額外的時效性通知 entitlement），
+    因此 `notifyHazard()` 只播放提示音＋長震動；畫面提示改由
     `RideHudScreen._notifyHazard()` 在 iOS 上額外用 `ScaffoldMessenger`
     顯示浮動 `SnackBar`（`HudColors.danger` 背景、標題+內文兩行文字，
     顯示 3 秒，新警示會先 `hideCurrentSnackBar()` 再顯示；`RideHudScreen` 以 `PopScope` 在開始返回歡迎畫面的瞬間（含手勢返回、斷線）呼叫 `clearSnackBars()` 立即撤銷，`dispose()` 也再清一次，避免掛在全域 `ScaffoldMessenger` 上的 SnackBar 殘留到歡迎畫面），Android 則
     維持只靠系統通知呈現、不疊加 SnackBar。
-  - 兩平台改為呼叫 `_longVibration()`：連續 3 次 `HapticFeedback
+  - 兩平台都呼叫 `_longVibration()`：連續 3 次 `HapticFeedback
     .heavyImpact()`、中間間隔 150ms，模擬出比單次震動更明顯的長震動感。
   - 兩平台的 `notifyHazard()` 呼叫端（`RideHudScreen`）內容一律只
     敘述目前狀態（如「左後方車輛逐漸接近」），不包含變換車道等行動
@@ -183,8 +182,9 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   `AMB82-Radar`（或 service UUID `6E400001-B5A3-F393-E0A9-E50E24DCCA9E`），
   連線後訂閱 TX characteristic（`6E400003-…`）的 Notify。每筆資料為一行
   ASCII CSV（7 欄，來源為 `arduino/App接收格式.xlsx`）：
-  `左後距離,右後距離,左後逼近,右後逼近,左前坑,正前坑,右前坑`。距離 1 遠
-  （30m）／2 中（15m）／3 近（5m）／0 沒車（視同最遠 30m），逼近與坑洞 1 有／0 沒有；
+  `左後距離,右後距離,左後逼近,右後逼近,左前,正前,右前`。距離 1 遠
+  （30m）／2 中（15m）／3 近（5m）／0 沒車（視同最遠 30m），逼近 1 有／0 沒有；前方三欄
+  0 沒坑沒障礙／1 有坑／2 有障礙／3 有坑有障礙（`FrontHazard.fromCode`）；
   距離欄位為其他值、任何欄位為 9（感測錯誤）或格式不符，整筆視為無效
   （`parse()` 回傳 null，`dataStatus` 變 `invalid`，HUD 顯示「尚無有效資料」）；也接受 7 個連續數字。車速不在協定內。
   `debugMode`（`ValueNotifier<bool>`）開啟時，`_onData` 會把每筆收到的原始資料
@@ -206,7 +206,7 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   （廣播名稱 `AMB82-Radar`，包含 RX／TX 兩個 characteristic，僅 TX 開啟 Notify）。
   App 訂閱 TX characteristic 後，`loop()` 在 Notify 開啟且已連線時每秒呼叫
   `sendSimulatedRadar()` 送出一筆模擬數據（12 步一個循環，涵蓋左側遠→中→近、
-  右側近→遠、左前／正前／右前坑洞等狀態），格式見 `BleRadarService`。
+  右側近→遠、左前／正前／右前的坑洞、障礙物、兩者並存等狀態），格式見 `BleRadarService`。
   開機時序列埠印出 `BLE_SIMULATED_7_FIELDS_1HZ_NO_GROVE`、`BLE_MAC=…`（輸入 `m`
   目前不支援重印，改為開機自動印出），供核對
   `BleRadarService.deviceMac`（掃描時也會以此 MAC 比對裝置）。草稿放在
@@ -222,7 +222,7 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
     或 8 秒內未能取得定位（`Geolocator.getCurrentPosition()` 加上
     `.timeout()`，避免 iOS 在收不到定位訊號時無限期卡在轉圈圈），
     回退到硬編碼的備援座標（南台科技大學一帶）。
-  - 用 `google_maps_flutter` 顯示地圖，開啟原生「目前位置」藍點
+  - 用 `google_maps_flutter` 顯示深色地圖（`GoogleMap.style` 套用內建的 `_darkMapStyle` JSON），開啟原生「目前位置」藍點
     （`myLocationEnabled`），並提供右下角「回到目前位置」按鈕重新置中鏡頭。
   - Android/iOS 的 Google Maps API 金鑰分別位於
     `android/local.properties` 與 `ios/Flutter/ApiKeys.xcconfig`（不進版控）。
@@ -231,31 +231,36 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
     換機器/重新取回專案時複製成正式檔名（去掉 `.example`）並貼回真實
     金鑰即可，`android/local.properties` 的 `sdk.dir`／`flutter.sdk` 兩行則
     由本機 IDE／`flutter` 工具在開啟專案或執行指令時自動覆寫為正確路徑。
-- **`SpeedGauge`**：車速儀表。左側 `CustomPainter` 畫 V 形刻度尺（路徑起點 0、
-  終點 `maxSpeed`＝25 km/h，每 1 km/h 一小刻度、每 5 一大刻度附數字，用
-  `PathMetric` 沿路徑取位置與法線），一根綠色指針依車速以 `TweenAnimationBuilder`
-  平滑移動（超過上限停在頂端）；右側為 104pt 細體大字車速（無資料顯示「—」）與
-  `km/h`。
-- **`MStripe`**：M 三色（淺藍／深藍／紅）等寬細條，用在 HUD 頂端與歡迎頁底部邊緣。
-- **`RoadView`**：整個 HUD 的視覺核心，`StatefulWidget` + `LayoutBuilder`，
+- **`SpeedGauge`**：車速儀表，仿 BMW 儀表造型。左側 `CustomPainter` 畫 V 形亮面金屬框
+  （鉻金屬漸層加外緣亮邊）與向右淡出的深色玻璃面板（底部暖色反光、斜向眩光）；
+  刻度為水平短線（車速與 y 座標線性對應，0 在底、`maxSpeed`＝25 km/h 在頂，
+  每 1 km/h 一小刻度、每 5 一大刻度附數字）；指針是一條水平的亮綠條，帶光暈與
+  左端星芒，依車速以 `TweenAnimationBuilder` 平滑移動（超過上限停在頂端）。
+  右側為 104pt 細體大字車速（無資料顯示「—」）與 `km/h`。
+- **`HudDialog`**（`showHudDialog`）：深色儀表風對話框，直角深灰面板、粗體標題、
+  可選取文字的內文、底部全寬白色方形按鈕；歡迎頁的連線失敗訊息使用它。
+  `main.dart` 另以主題統一 Dialog／BottomSheet／PopupMenu／Card／SnackBar 的深色直角風格。
+- **`RoadView`**：整個 HUD 的視覺核心，`StatefulWidget` + `LayoutBuilder`（外包 `ClipRect`），
   以針孔透視（`_Cam`）將世界座標（自行車在原點、z 往前）投影到畫面，
-  鏡頭在自行車後上方，自行車約落在畫面 60% 高處：
-  - 道路、左右分隔虛線（依車速往鏡頭方向捲動）、前方坑洞球體由 `_RoadPainter`
+  鏡頭在自行車後上方（高 20m、偏俯視），自行車約落在畫面 60% 高處：
+  - 道路地面（不畫車道線，避免誤導為三車道視野；只有依車速往鏡頭方向捲動的淡色橫向格線）、前方路況由 `_RoadPainter`
     繪製，遠端以漸層淡出到背景色；中央疊放車輛圖示（`assets/bike.png`）。
-  - 左／右後方來車由 `_CarsPainter` 以立方體繪製在左右車道，立方體前緣離車身
-    `distanceMeters` 公尺，顏色依 `VehicleThreat.level`（綠／黃／紅）；標記為
-    「逼近中」時立方體上方顯示黃色警示三角形，由單一時鐘（`_Clock`，
-    `SingleTickerProviderStateMixin` 的 `Ticker`）驅動，左右同步硬切閃爍
-    （刻意不做透明度補間）。painter 以時鐘作為 `repaint` 來源，捲動與閃爍不需
-    重建整個 widget 樹。
-  - 前方三個方向（左前／正前／右前）的坑洞以黃色球體表示（暫為占位造型），
+  - 前方三個方向（左前／正前／右前，橫向間隔 2.8m）：坑洞畫成路面上的坑
+    （透視橢圓，黃色外框加亮色坑緣，內部由遠端坑壁漸層到近黑的坑底，不與灰色路面
+    融為一體），障礙物以橘色三角錐（白色反光條）表示，兩者並存時障礙物在更前方；
     純路況提示、不閃爍。
+  - 左／右後方來車由 `_CarsPainter` 以立方體繪製在自行車後方左右兩側：威脅等級為安全
+    （距離遠或沒車）時不顯示方塊；否則前緣離車尾 `distanceMeters × 0.9` 公尺，並限制
+    頂面前緣在畫面上不超過自行車中心（不會「超過」車身）。顏色依
+    `VehicleThreat.level`（黃／紅）呈現威脅程度與距離；標記為「逼近中」時方塊硬切閃爍，
+    由單一時鐘（`_Clock`，`Ticker`）驅動，左右同步（刻意不做透明度補間）。
+    painter 以時鐘作為 `repaint` 來源，捲動與閃爍不需重建整個 widget 樹。
 - **`SimulationSheet`**：`StatefulWidget`，以 modal bottom sheet 形式提供：
   - 車速滑桿（`_SliderField`）。
   - 左／右後方車輛的距離下拉選單（近/中/遠三檔）與逼近開關
     （`_ThreatGroup`，兩側各一組，分別用 `HudColors.safe` / `HudColors.danger`
     作為色標區分）。
-  - 前方三個方向的坑洞開關（`SwitchListTile`）。
+  - 前方三個方向各一個路況下拉選單（`_FrontField`：無／坑洞／障礙物／坑洞＋障礙物）。
   - 每次變更都會即時呼叫 `onChanged` 回傳新的 `SimulationValues`，
     由 `RideHudScreen` 接手更新畫面，無内部暫存的「送出」流程。
 
@@ -264,7 +269,7 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
 - **`HudColors`**：集中定義的色彩常數，整體介面採近黑底白字的深色儀表風格
   （`main.dart` 使用 `Brightness.dark` 主題）：
   - `surface` / `panel` / `road` / `ink` 系列：底色、道路色與文字色階。
-  - `gauge`：儀表指針綠。`mLightBlue` / `mBlue` / `mRed`：M 三色。
+  - `gauge`：儀表指針綠。
   - `brand` / `brandDim`：僅用於浮動按鈕、模擬面板等互動元件的品牌色（M 藍）。
   - `safe` / `warn` / `danger`（各附一組 `Dim` 淡色版本）：語意色，
     對應威脅等級與坑洞警示。
@@ -277,7 +282,7 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
         ▼
 RideHudScreen._sim  (setState)
         │
-        ├─► _threats: List<VehicleThreat>  ──► RoadView（立方體＋警示三角形）
+        ├─► _threats: List<VehicleThreat>  ──► RoadView（立方體閃爍、路面坑洞、三角錐）
         ├─► _activeAlert                   ──► _AlertLines（頂部警示文字）
         └─► _sim.bikeSpeed                 ──► SpeedGauge（車速儀表）
 ```
@@ -293,7 +298,10 @@ RideHudScreen._sim  (setState)
   不納入版控，需另外設定。
 - **定位權限**：`geolocator` 需要在 `android/app/src/main/AndroidManifest.xml`
   與 `ios/Runner/Info.plist` 中宣告對應的定位權限描述文字。
-- **資源**：`assets/bike.png` 已在 `pubspec.yaml` 的 `assets:` 區塊註冊
+- **強制直向**：版面為直向設計。`main.dart` 以 `SystemChrome.setPreferredOrientations` 鎖定 `portraitUp`；
+  Android `AndroidManifest.xml` 的 MainActivity 設 `screenOrientation="portrait"`；iOS `Info.plist`
+  的 `UISupportedInterfaceOrientations`（含 iPad）只保留 Portrait。
+- **資源**：`assets/bike.png`、`assets/welcome.jpg` 已在 `pubspec.yaml` 的 `assets:` 區塊註冊
   （整個 `assets/` 目錄）。
 - **IDE 並行執行**：`.idea/runConfigurations/main_dart.xml` 設定
   `singleton="false"`（Allow parallel run），在 IntelliJ 先對 Android 按播放、

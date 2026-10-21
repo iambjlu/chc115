@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 /// 深色儀表風 HUD 配色：近黑底、白字，車速儀表與道路檢視使用中性灰階，
-/// 只有語意色（安全/注意/危險）、儀表指針綠與邊緣的 M 三色條帶有顏色。
+/// 只有語意色（安全/注意/危險）與儀表指針綠帶有顏色。
 class HudColors {
   HudColors._();
 
@@ -21,11 +21,6 @@ class HudColors {
   // 品牌色：僅用於浮動按鈕與模擬面板等互動元件
   static const Color brand = Color(0xFF0066B1);
   static const Color brandDim = Color(0x1F0066B1);
-
-  // M 三色（淺藍 / 深藍 / 紅）
-  static const Color mLightBlue = Color(0xFF81C4FF);
-  static const Color mBlue = Color(0xFF0066B1);
-  static const Color mRed = Color(0xFFE4002B);
 
   // 語意色：安全 / 注意 / 危險
   static const Color safe = Color(0xFF3DD16F);

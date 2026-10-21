@@ -9,7 +9,6 @@ import '../models/vehicle_threat.dart';
 import '../services/alert_notification_service.dart';
 import '../services/ble_radar_service.dart';
 import '../theme/hud_colors.dart';
-import '../widgets/m_stripe.dart';
 import '../widgets/map_card.dart';
 import '../widgets/road_view.dart';
 import '../widgets/simulation_sheet.dart';
@@ -18,7 +17,7 @@ import '../widgets/speed_gauge.dart';
 /// HUD 的資料來源：藍牙（AMB82 板子）或手動模擬面板。
 enum RideHudMode { ble, simulation }
 
-/// 騎乘中的後方雷達 HUD 主畫面：頂端 M 三色條、指針式車速儀表、警示文字、
+/// 騎乘中的後方雷達 HUD 主畫面：指針式車速儀表、警示文字、
 /// 地圖與虛擬道路檢視，左下角浮動按鈕開啟選單。
 class RideHudScreen extends StatefulWidget {
   const RideHudScreen({super.key, this.mode = RideHudMode.simulation});
@@ -146,15 +145,24 @@ class _RideHudScreenState extends State<RideHudScreen> {
     return _AlertInfo(label: threat.label);
   }
 
-  // 依左前/正前/右前順序列出目前亮起的坑洞方向，多個方向用「、」分隔。
+  // 依左前/正前/右前順序列出目前有路況的方向（如「左前坑洞、正前障礙物」）。
   String? get _potholeAlertText {
-    final directions = <String>[
-      if (_sim.potholeFrontLeft) '左前',
-      if (_sim.potholeFrontCenter) '正前',
-      if (_sim.potholeFrontRight) '右前',
+    String name(FrontHazard h) => switch (h) {
+      FrontHazard.pothole => '坑洞',
+      FrontHazard.obstacle => '障礙物',
+      FrontHazard.both => '坑洞及障礙物',
+      FrontHazard.none => '',
+    };
+    final items = <String>[
+      for (final (label, hazard) in [
+        ('左前', _sim.frontLeft),
+        ('正前', _sim.frontCenter),
+        ('右前', _sim.frontRight),
+      ])
+        if (hazard != FrontHazard.none) '$label${name(hazard)}',
     ];
-    if (directions.isEmpty) return null;
-    return '請注意${directions.join('、')}坑洞';
+    if (items.isEmpty) return null;
+    return '請注意${items.join('、')}';
   }
 
   void _openSimulationSheet() {
@@ -176,7 +184,7 @@ class _RideHudScreenState extends State<RideHudScreen> {
   // - 距離縮短：左右後方只要新距離比前一次更近就觸發，不論
   //   leftApproaching/rightApproaching 開關是否開啟。
   // - 逼近車輛：由假變真才觸發，避免逼近開關持續開啟時反覆通知。
-  // - 坑洞：同樣由假變真才觸發，避免同一坑洞持續開啟時反覆通知。
+  // - 坑洞／障礙物：同樣由無變有才觸發，避免同一路況持續存在時反覆通知。
   void _applySimulationValues(SimulationValues next) {
     final previous = _sim;
     setState(() => _sim = next);
@@ -209,26 +217,25 @@ class _RideHudScreenState extends State<RideHudScreen> {
         body: '右後方車輛正在逼近中',
       );
     }
-    if (next.potholeFrontLeft && !previous.potholeFrontLeft) {
-      _notifyHazard(
-        category: HazardCategory.pothole,
-        title: '前方左側坑洞',
-        body: '請減速並注意路面',
-      );
-    }
-    if (next.potholeFrontCenter && !previous.potholeFrontCenter) {
-      _notifyHazard(
-        category: HazardCategory.pothole,
-        title: '前方中央坑洞',
-        body: '請減速並注意路面',
-      );
-    }
-    if (next.potholeFrontRight && !previous.potholeFrontRight) {
-      _notifyHazard(
-        category: HazardCategory.pothole,
-        title: '前方右側坑洞',
-        body: '請減速並注意路面',
-      );
+    for (final (label, prev, cur) in [
+      ('左側', previous.frontLeft, next.frontLeft),
+      ('中央', previous.frontCenter, next.frontCenter),
+      ('右側', previous.frontRight, next.frontRight),
+    ]) {
+      if (cur.hasPothole && !prev.hasPothole) {
+        _notifyHazard(
+          category: HazardCategory.pothole,
+          title: '前方$label坑洞',
+          body: '請減速並注意路面',
+        );
+      }
+      if (cur.hasObstacle && !prev.hasObstacle) {
+        _notifyHazard(
+          category: HazardCategory.obstacle,
+          title: '前方$label障礙物',
+          body: '請減速並注意前方',
+        );
+      }
     }
   }
 
@@ -326,7 +333,6 @@ class _RideHudScreenState extends State<RideHudScreen> {
         body: SafeArea(
           child: Column(
             children: [
-              const MStripe(),
               // Android 的 heads-up 通知會蓋住最上方，預留空間避免擋到車速。
               if (Platform.isAndroid) const SizedBox(height: 48),
               SpeedGauge(speed: speed),
@@ -345,9 +351,9 @@ class _RideHudScreenState extends State<RideHudScreen> {
                         : RoadView(
                           threats: threats,
                           speedKmh: (speed ?? 0).toDouble(),
-                          potholeFrontLeft: _sim.potholeFrontLeft,
-                          potholeFrontCenter: _sim.potholeFrontCenter,
-                          potholeFrontRight: _sim.potholeFrontRight,
+                          frontLeft: _sim.frontLeft,
+                          frontCenter: _sim.frontCenter,
+                          frontRight: _sim.frontRight,
                         ),
               ),
               if (_isBle && BleRadarService.instance.debugMode.value)

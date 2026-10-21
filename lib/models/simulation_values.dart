@@ -1,7 +1,30 @@
 import 'package:flutter/foundation.dart';
 
+/// 車輛前方某個方向的路況：沒有 / 坑洞 / 障礙物 / 坑洞加障礙物。
+/// [code] 對應 BLE 協定的 0 / 1 / 2 / 3。
+enum FrontHazard {
+  none(0),
+  pothole(1),
+  obstacle(2),
+  both(3);
+
+  const FrontHazard(this.code);
+
+  final int code;
+
+  bool get hasPothole => this == pothole || this == both;
+  bool get hasObstacle => this == obstacle || this == both;
+
+  static FrontHazard? fromCode(int code) {
+    for (final h in values) {
+      if (h.code == code) return h;
+    }
+    return null;
+  }
+}
+
 /// 模擬面板目前的數值狀態：自身車速、左右後方車輛的距離（下拉選單挑選）
-/// 與是否正在逼近（開關），以及前方三個方向的坑洞預警開關。
+/// 與是否正在逼近（開關），以及前方三個方向（左前／正前／右前）的路況（坑洞、障礙物）。
 @immutable
 class SimulationValues {
   const SimulationValues({
@@ -10,9 +33,9 @@ class SimulationValues {
     required this.leftApproaching,
     required this.rightDistance,
     required this.rightApproaching,
-    required this.potholeFrontLeft,
-    required this.potholeFrontCenter,
-    required this.potholeFrontRight,
+    required this.frontLeft,
+    required this.frontCenter,
+    required this.frontRight,
   });
 
   static const demo = SimulationValues(
@@ -21,9 +44,9 @@ class SimulationValues {
     leftApproaching: false,
     rightDistance: 5, // 近
     rightApproaching: true,
-    potholeFrontLeft: false,
-    potholeFrontCenter: true,
-    potholeFrontRight: false,
+    frontLeft: FrontHazard.none,
+    frontCenter: FrontHazard.pothole,
+    frontRight: FrontHazard.obstacle,
   );
 
   /// 藍牙模式剛進入、尚未收到任何數據時的初始畫面：全部安全、無警示。
@@ -33,9 +56,9 @@ class SimulationValues {
     leftApproaching: false,
     rightDistance: 30,
     rightApproaching: false,
-    potholeFrontLeft: false,
-    potholeFrontCenter: false,
-    potholeFrontRight: false,
+    frontLeft: FrontHazard.none,
+    frontCenter: FrontHazard.none,
+    frontRight: FrontHazard.none,
   );
 
   final double bikeSpeed;
@@ -43,9 +66,9 @@ class SimulationValues {
   final bool leftApproaching;
   final double rightDistance;
   final bool rightApproaching;
-  final bool potholeFrontLeft;
-  final bool potholeFrontCenter;
-  final bool potholeFrontRight;
+  final FrontHazard frontLeft;
+  final FrontHazard frontCenter;
+  final FrontHazard frontRight;
 
   SimulationValues copyWith({
     double? bikeSpeed,
@@ -53,9 +76,9 @@ class SimulationValues {
     bool? leftApproaching,
     double? rightDistance,
     bool? rightApproaching,
-    bool? potholeFrontLeft,
-    bool? potholeFrontCenter,
-    bool? potholeFrontRight,
+    FrontHazard? frontLeft,
+    FrontHazard? frontCenter,
+    FrontHazard? frontRight,
   }) {
     return SimulationValues(
       bikeSpeed: bikeSpeed ?? this.bikeSpeed,
@@ -63,9 +86,9 @@ class SimulationValues {
       leftApproaching: leftApproaching ?? this.leftApproaching,
       rightDistance: rightDistance ?? this.rightDistance,
       rightApproaching: rightApproaching ?? this.rightApproaching,
-      potholeFrontLeft: potholeFrontLeft ?? this.potholeFrontLeft,
-      potholeFrontCenter: potholeFrontCenter ?? this.potholeFrontCenter,
-      potholeFrontRight: potholeFrontRight ?? this.potholeFrontRight,
+      frontLeft: frontLeft ?? this.frontLeft,
+      frontCenter: frontCenter ?? this.frontCenter,
+      frontRight: frontRight ?? this.frontRight,
     );
   }
 }

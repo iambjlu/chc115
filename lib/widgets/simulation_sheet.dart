@@ -74,24 +74,21 @@ class _SimulationSheetState extends State<SimulationSheet> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('前方坑洞', style: Theme.of(context).textTheme.labelLarge),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('左前'),
-                      value: _values.potholeFrontLeft,
-                      onChanged: (v) => _update(_values.copyWith(potholeFrontLeft: v)),
+                    Text('前方路況', style: Theme.of(context).textTheme.labelLarge),
+                    _FrontField(
+                      label: '左前',
+                      value: _values.frontLeft,
+                      onChanged: (v) => _update(_values.copyWith(frontLeft: v)),
                     ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('正前'),
-                      value: _values.potholeFrontCenter,
-                      onChanged: (v) => _update(_values.copyWith(potholeFrontCenter: v)),
+                    _FrontField(
+                      label: '正前',
+                      value: _values.frontCenter,
+                      onChanged: (v) => _update(_values.copyWith(frontCenter: v)),
                     ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('右前'),
-                      value: _values.potholeFrontRight,
-                      onChanged: (v) => _update(_values.copyWith(potholeFrontRight: v)),
+                    _FrontField(
+                      label: '右前',
+                      value: _values.frontRight,
+                      onChanged: (v) => _update(_values.copyWith(frontRight: v)),
                     ),
                   ],
                 ),
@@ -100,6 +97,42 @@ class _SimulationSheetState extends State<SimulationSheet> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 前方單一方向的路況下拉選單：沒有／坑洞／障礙物／坑洞加障礙物。
+class _FrontField extends StatelessWidget {
+  const _FrontField({required this.label, required this.value, required this.onChanged});
+
+  static const _labels = {
+    FrontHazard.none: '無',
+    FrontHazard.pothole: '坑洞',
+    FrontHazard.obstacle: '障礙物',
+    FrontHazard.both: '坑洞＋障礙物',
+  };
+
+  final String label;
+  final FrontHazard value;
+  final ValueChanged<FrontHazard> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label),
+        DropdownButton<FrontHazard>(
+          value: value,
+          items: [
+            for (final h in FrontHazard.values)
+              DropdownMenuItem(value: h, child: Text(_labels[h]!)),
+          ],
+          onChanged: (v) {
+            if (v != null) onChanged(v);
+          },
+        ),
+      ],
     );
   }
 }

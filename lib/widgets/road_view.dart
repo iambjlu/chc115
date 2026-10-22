@@ -174,9 +174,6 @@ Color _shade(Color c, double lightnessDelta) {
 const _arcSegs = 9;
 const _frontOrange = Color(0xFFFF8A1F);
 
-/// 前方橘色弧條（gapMeters 0.5）中線離車身中心的 z 距離；坑洞放在同一距離。
-const _frontArcZ = _arcZK * (1.65 + _frontGap + 0.25);
-
 /// 前方弧條內緣離車身的間距（前方沒有距離資料，固定值）。
 const _frontGap = 1.4;
 
@@ -185,7 +182,8 @@ const _frontGap = 1.4;
 const _arcZK = 4.5;
 
 /// 自行車周圍的立體弧形燈條中的一小段（倒車雷達樣式）：以車身中心為圓心的橢圓環，
-/// 沿前方（[rear] 為 false）或後方半圈分成 [_arcSegs] 段，第 [k] 段為 0..8（由右到左）。
+/// 沿前方（[rear] 為 false）或後方半圈分成 [total] 段（前方 9 段＝左前／正前／右前各 60°，
+/// 後方 10 段＝左後／右後各 90°），第 [k] 段由右到左。
 /// [gapMeters] 為燈條內緣離車身的額外距離（越近越貼車）。以 [top] 為頂面色、
 /// 較暗的側面墊出厚度，外側帶光暈。
 void _arcSegment(
@@ -195,6 +193,7 @@ void _arcSegment(
   required bool rear,
   required Color top,
   required double gapMeters,
+  int total = _arcSegs,
 }) {
   const gap = 0.05; // 段與段之間的縫（弧度）
   const height = 0.18;
@@ -207,8 +206,8 @@ void _arcSegment(
     h,
     sign * _arcZK * (outer ? rz1 : rz0) * math.sin(a),
   );
-  final a0 = k * math.pi / _arcSegs + gap;
-  final a1 = (k + 1) * math.pi / _arcSegs - gap;
+  final a0 = k * math.pi / total + gap;
+  final a1 = (k + 1) * math.pi / total - gap;
   const n = 4;
   List<Offset> edge(bool outer, double h) => [
     for (var j = 0; j <= n; j++) pt(outer, a0 + (a1 - a0) * j / n, h),
@@ -293,10 +292,21 @@ class _RoadPainter extends CustomPainter {
 
     // 前方路況，左前 / 正前 / 右前：坑洞是畫在路面上的坑、障礙物是自行車前方的弧形燈條，
     // 兩者並存時坑洞與弧形燈條同時顯示。
-    const slots = [(-2.8, 0), (0.0, 1), (2.8, 2)];
+    // 坑洞放在各自扇區中線方向（右前 30°、正前 90°、左前 150°），位於弧條內側。
     final hazards = [frontLeft, frontCenter, frontRight];
-    for (final (x, i) in slots) {
-      if (hazards[i].hasPothole) _pit(canvas, cam, x, _frontArcZ - 3.5);
+    const pitAngles = [5 * math.pi / 6, math.pi / 2, math.pi / 6]; // 對應 hazards 順序
+    const pitRx = 0.9 + _frontGap - 0.45;
+    const pitRz = _arcZK * (1.65 + _frontGap) - 1.8;
+    for (var i = 0; i < 3; i++) {
+      if (hazards[i].hasPothole) {
+        _pit(
+          canvas,
+          cam,
+          pitRx * math.cos(pitAngles[i]),
+          pitRz * math.sin(pitAngles[i]),
+          scale: 0.75,
+        );
+      }
     }
     // 障礙物：自行車前方的分段弧形燈條（倒車雷達樣式），左前／正前／右前各一區。
     // 前方沒有距離判斷，一律用橘色。sectorOn 順序為左前、正前、右前；k 0..2 右前、3..5 正前、6..8 左前。
@@ -328,7 +338,7 @@ class _RoadPainter extends CustomPainter {
 
   /// 坑洞：畫在路面上的一個坑——黃色外框加較亮的坑緣，內部是由遠端坑壁（亮）
   /// 漸層到坑底（近黑），不會與灰色路面融為一體。
-  void _pit(Canvas canvas, _Cam cam, double x, double z) {
+  void _pit(Canvas canvas, _Cam cam, double x, double z, {double scale = 1}) {
     // 地面在畫面上被透視壓扁，z 方向放大約 2 倍，坑看起來才像坑而不是細環。
     const zStretch = 2.0;
     Path ring(double r, [double dz = 0]) {
@@ -343,7 +353,7 @@ class _RoadPainter extends CustomPainter {
       return _poly(pts);
     }
 
-    final rim = ring(1.0);
+    final rim = ring(1.0 * scale);
     canvas.drawPath(rim, Paint()..color = const Color(0xFF555B66));
     canvas.drawPath(
       rim,
@@ -353,7 +363,7 @@ class _RoadPainter extends CustomPainter {
         ..strokeJoin = StrokeJoin.round
         ..color = HudColors.warn,
     );
-    final hole = ring(0.74);
+    final hole = ring(0.74 * scale);
     final bounds = hole.getBounds();
     canvas.drawPath(
       hole,
@@ -397,10 +407,10 @@ class _CarsPainter extends CustomPainter {
       // 逼近中：硬切閃爍（左右共用同一個時鐘，節奏同步）。
       if (t.isApproaching && !clock.blinkVisible) continue;
       final left = t.side == ThreatSide.left;
-      // k 由右到左 0..8；後方正中央（k=4）留空，右後 0..3、左後 5..8。
-      // 不論距離，塊數固定 4 段（圍成車身後半圈），距離只影響顏色與離車遠近。
-      final order = left ? [5, 6, 7, 8] : [3, 2, 1, 0];
-      const count = 4;
+      // 後半圈分 10 段（各 18°），k 由右到左 0..9：右後 0..4（90°）、左後 5..9（90°）。
+      // 不論距離，塊數固定 5 段，距離只影響顏色與離車遠近。
+      final order = left ? [5, 6, 7, 8, 9] : [0, 1, 2, 3, 4];
+      const count = 5;
       // 距離 5m 離車身 0.5m、30m 外推到 1.3m：越近燈條越靠車。
       final gap = 0.5 + (t.distanceMeters.clamp(5, 30) - 5) / 25 * 0.8;
       for (final k in order.take(count)) {
@@ -411,6 +421,7 @@ class _CarsPainter extends CustomPainter {
           rear: true,
           top: _colorFor(t.level),
           gapMeters: gap,
+          total: 10,
         );
       }
     }

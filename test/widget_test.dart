@@ -18,7 +18,7 @@ void main() {
     await tester.tap(find.text('使用模擬數據繼續'));
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
-    expect(find.text('25'), findsOneWidget);
+    expect(find.text('20'), findsOneWidget);
     expect(find.text('BLE 板子模擬資料', findRichText: true, skipOffstage: false), findsNothing);
 
     await tester.tap(find.byIcon(Icons.menu_rounded));
@@ -35,13 +35,13 @@ void main() {
     await tester.tap(find.text('使用模擬數據繼續'));
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
-    expect(find.text('25'), findsOneWidget);
+    expect(find.text('20'), findsOneWidget);
 
     // 只有 inactive（例如下拉通知列）不會離開 HUD。
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await tester.pump(const Duration(seconds: 1));
-    expect(find.text('25'), findsOneWidget);
+    expect(find.text('20'), findsOneWidget);
 
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
@@ -52,6 +52,6 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     expect(find.text('自行車警示系統'), findsOneWidget);
-    expect(find.text('25'), findsNothing);
+    expect(find.text('20'), findsNothing);
   });
 }

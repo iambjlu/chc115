@@ -478,7 +478,14 @@ class _PotholeAlertLine extends StatelessWidget {
           children: [
             const Icon(Icons.warning_rounded, size: 18, color: HudColors.warn),
             const SizedBox(width: 8),
-            Text(text ?? ' ', style: titleStyle),
+            // 文字過長（多方向同時有路況）時縮小字級，維持單行、不被切掉。
+            Expanded(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(text ?? ' ', style: titleStyle),
+              ),
+            ),
           ],
         ),
       ),

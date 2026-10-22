@@ -39,15 +39,16 @@ class SimulationValues {
   });
 
   static const demo = SimulationValues(
-    bikeSpeed: 25,
-    leftDistance: 30, // 遠
+    bikeSpeed: 20,
+    leftDistance: 15, // 中
     leftApproaching: false,
     rightDistance: 5, // 近
     rightApproaching: true,
-    frontLeft: FrontHazard.none,
-    frontCenter: FrontHazard.pothole,
-    frontRight: FrontHazard.obstacle,
+    frontLeft: FrontHazard.both,
+    frontCenter: FrontHazard.both,
+    frontRight: FrontHazard.both,
   );
+
 
   /// 藍牙模式剛進入、尚未收到任何數據時的初始畫面：全部安全、無警示。
   static const empty = SimulationValues(

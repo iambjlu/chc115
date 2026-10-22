@@ -44,6 +44,8 @@ class _RideHudScreenState extends State<RideHudScreen> {
   @override
   void initState() {
     super.initState();
+    AlertNotificationService.instance.soundEnabled.addListener(_updateBeep);
+    _updateBeep();
     if (_isBle) {
       BleRadarService.instance.dataStatus.addListener(_onDataStatus);
       // 藍牙收到的數據與模擬面板走同一條路徑（含通知比對）。
@@ -93,6 +95,8 @@ class _RideHudScreenState extends State<RideHudScreen> {
   void dispose() {
     // 保險：離開此頁時一併撤銷 SnackBar（它掛在全域 ScaffoldMessenger 上，不會隨頁面消失）。
     _messenger?.clearSnackBars();
+    AlertNotificationService.instance.soundEnabled.removeListener(_updateBeep);
+    AlertNotificationService.instance.updateBeep(null);
     _bleSub?.cancel();
     _gpsSub?.cancel();
     if (_isBle) {
@@ -111,6 +115,11 @@ class _RideHudScreenState extends State<RideHudScreen> {
         mounted) {
       Navigator.of(context).maybePop();
     }
+  }
+
+  void _toggleSound() {
+    final n = AlertNotificationService.instance.soundEnabled;
+    n.value = !n.value;
   }
 
   Future<void> _disconnect() async {
@@ -188,6 +197,7 @@ class _RideHudScreenState extends State<RideHudScreen> {
   void _applySimulationValues(SimulationValues next) {
     final previous = _sim;
     setState(() => _sim = next);
+    _updateBeep();
 
     if (next.leftDistance < previous.leftDistance) {
       _notifyHazard(
@@ -237,6 +247,23 @@ class _RideHudScreenState extends State<RideHudScreen> {
         );
       }
     }
+  }
+
+  // 前方每個有坑洞／障礙物的方向各算一處危險，處數越多嗶聲間隔越短（越急促）；
+  // 正前方的危險再多算一處。目前協定沒有前方距離，若日後有距離可在此依距離換算。
+  void _updateBeep() {
+    var score = 0;
+    for (final (h, weight) in [
+      (_sim.frontLeft, 1),
+      (_sim.frontCenter, 2),
+      (_sim.frontRight, 1),
+    ]) {
+      if (h != FrontHazard.none)
+        score += weight + (h == FrontHazard.both ? 1 : 0);
+    }
+    AlertNotificationService.instance.updateBeep(
+      score == 0 ? null : (900 - score * 150).clamp(250, 750),
+    );
   }
 
   // iOS 不使用系統通知（見 AlertNotificationService 說明），改在畫面底部
@@ -302,6 +329,7 @@ class _RideHudScreenState extends State<RideHudScreen> {
           onSelected:
               (item) => switch (item) {
                 _HudMenu.simulation => _openSimulationSheet(),
+                _HudMenu.sound => _toggleSound(),
                 _HudMenu.disconnect => _disconnect(),
               },
           itemBuilder:
@@ -314,6 +342,21 @@ class _RideHudScreenState extends State<RideHudScreen> {
                       title: Text('模擬控制'),
                     ),
                   ),
+                PopupMenuItem(
+                  value: _HudMenu.sound,
+                  child: ListTile(
+                    leading: Icon(
+                      AlertNotificationService.instance.soundEnabled.value
+                          ? Icons.volume_up_rounded
+                          : Icons.volume_off_rounded,
+                    ),
+                    title: Text(
+                      AlertNotificationService.instance.soundEnabled.value
+                          ? '聲音：開'
+                          : '聲音：關',
+                    ),
+                  ),
+                ),
                 const PopupMenuItem(
                   value: _HudMenu.disconnect,
                   child: ListTile(
@@ -381,31 +424,33 @@ class _RawDataPanel extends StatelessWidget {
       child: ValueListenableBuilder<List<String>>(
         valueListenable: BleRadarService.instance.rawLog,
         builder:
-            (context, lines, _) => lines.isEmpty
-                ? const Text(
-                    '等待原始資料…',
-                    style: TextStyle(color: Colors.white54, fontSize: 12),
-                  )
-                : ListView.builder(
-                    itemCount: lines.length,
-                    itemBuilder:
-                        (context, i) => Text(
-                          lines[i],
-                          style: TextStyle(
-                            color: lines[i].endsWith('✓')
-                                ? Colors.greenAccent
-                                : Colors.redAccent,
-                            fontFamily: 'Menlo',
-                            fontSize: 11,
+            (context, lines, _) =>
+                lines.isEmpty
+                    ? const Text(
+                      '等待原始資料…',
+                      style: TextStyle(color: Colors.white54, fontSize: 12),
+                    )
+                    : ListView.builder(
+                      itemCount: lines.length,
+                      itemBuilder:
+                          (context, i) => Text(
+                            lines[i],
+                            style: TextStyle(
+                              color:
+                                  lines[i].endsWith('✓')
+                                      ? Colors.greenAccent
+                                      : Colors.redAccent,
+                              fontFamily: 'Menlo',
+                              fontSize: 11,
+                            ),
                           ),
-                        ),
-                  ),
+                    ),
       ),
     );
   }
 }
 
-enum _HudMenu { simulation, disconnect }
+enum _HudMenu { simulation, sound, disconnect }
 
 /// 坑洞提示文字（除了系統通知外，畫面上也常駐顯示目前亮起的坑洞方向）。
 /// 樣式比照後方車輛逼近警示（Icon + 粗體文字），並固定保留一行高度，

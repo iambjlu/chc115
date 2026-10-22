@@ -9,7 +9,7 @@ import '../theme/hud_colors.dart';
 
 /// 虛擬道路檢視：鏡頭在自行車後上方往前看，自行車位於道路中間，
 /// 左右後方來車以立方體顯示在自行車後方的左右兩側（距離越近越靠近車身），
-/// 前方坑洞畫成路面上的坑、障礙物為三角錐。標記為「逼近中」的立方體會硬切閃爍
+/// 前方坑洞畫成路面上的坑、障礙物為環形。標記為「逼近中」的立方體會硬切閃爍
 /// （無淡入淡出），左右共用同一個時鐘，節奏永遠同步。
 /// 地面橫向格線依車速往後捲動，營造行進感（刻意不畫車道線）。
 class RoadView extends StatefulWidget {
@@ -75,7 +75,7 @@ class _RoadViewState extends State<RoadView>
         final size = Size(constraints.maxWidth, constraints.maxHeight);
         final cam = _Cam(size);
         final bikeCenter = cam.p(0, 0, 0);
-        final bikeHeight = _Cam.bikeLength * cam.scaleAt(0);
+        final bikeHeight = _Cam.bikeLength * cam.scaleAt(0) * 1.25;
         final bikeWidth = bikeHeight * 542 / 1072;
         return ClipRect(
           child: Stack(
@@ -87,6 +87,26 @@ class _RoadViewState extends State<RoadView>
                   frontLeft: widget.frontLeft,
                   frontCenter: widget.frontCenter,
                   frontRight: widget.frontRight,
+                ),
+              ),
+              // 車身後方的白色光暈與橢圓底盤，讓自行車從深色路面上浮出來。
+              Positioned(
+                left: bikeCenter.dx - bikeWidth * 1.3,
+                top: bikeCenter.dy - bikeHeight * 0.75,
+                width: bikeWidth * 2.6,
+                height: bikeHeight * 1.5,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        Colors.white.withValues(alpha: 0.55),
+                        Colors.white.withValues(alpha: 0.18),
+                        Colors.white.withValues(alpha: 0),
+                      ],
+                      stops: const [0, 0.55, 1],
+                    ),
+                  ),
                 ),
               ),
               Positioned(
@@ -197,7 +217,7 @@ class _RoadPainter extends CustomPainter {
       canvas.drawLine(cam.p(-half, 0, z), cam.p(half, 0, z), grid);
     }
 
-    // 前方路況，左前 / 正前 / 右前：坑洞是畫在路面上的坑、障礙物是橘色三角錐，
+    // 前方路況，左前 / 正前 / 右前：坑洞是畫在路面上的坑、障礙物是橘色環形，
     // 兩者並存時障礙物放在坑洞更前方。由遠到近繪製。
     const slots = [(-2.8, 0), (0.0, 1), (2.8, 2)];
     final hazards = [frontLeft, frontCenter, frontRight];
@@ -221,49 +241,54 @@ class _RoadPainter extends CustomPainter {
     );
   }
 
+  /// 障礙物：路面上的橘色環形（圓環），外圈到內圈有明暗漸層，環上均分白色反光段。
   void _cone(Canvas canvas, _Cam cam, double x, double z) {
-    const baseHalf = 0.55;
-    const height = 1.3;
-    final left = cam.p(x - baseHalf, 0, z);
-    final right = cam.p(x + baseHalf, 0, z);
-    final apex = cam.p(x, height, z);
-    final scale = cam.scaleAt(z);
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: Offset(cam.p(x, 0, z).dx + scale * 0.15, cam.p(x, 0, z).dy),
-        width: scale * baseHalf * 2.6,
-        height: scale * 0.5,
-      ),
+    const zStretch = 2.0;
+    const outer = 0.9, inner = 0.5;
+    Offset pt(double r, double a) =>
+        cam.p(x + r * math.cos(a), 0, z + zStretch * r * math.sin(a));
+    Path ringPath(double r) =>
+        _poly([for (var i = 0; i < 48; i++) pt(r, i * math.pi / 24)]);
+
+    final ring = Path.combine(
+      PathOperation.difference,
+      ringPath(outer),
+      ringPath(inner),
+    );
+    canvas.drawPath(
+      ringPath(outer).shift(const Offset(2, 3)),
       Paint()..color = const Color(0x66000000),
     );
-    final body =
-        Path()
-          ..moveTo(left.dx, left.dy)
-          ..lineTo(apex.dx, apex.dy)
-          ..lineTo(right.dx, right.dy)
-          ..close();
     canvas.drawPath(
-      body,
+      ring,
       Paint()
         ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
           colors: [
             _shade(_obstacle, 0.12),
             _obstacle,
             _shade(_obstacle, -0.22),
           ],
-        ).createShader(Rect.fromPoints(left, right)),
+        ).createShader(ring.getBounds()),
     );
-    // 白色反光條
-    final y1 = 0.42, y2 = 0.7;
-    double half(double h) => baseHalf * (1 - h / height);
+    // 均分的白色反光段（沿環一圈 6 段）
+    const mid = (outer + inner) / 2;
     final band =
-        Path()
-          ..moveTo(cam.p(x - half(y1), y1, z).dx, cam.p(x, y1, z).dy)
-          ..lineTo(cam.p(x - half(y2), y2, z).dx, cam.p(x, y2, z).dy)
-          ..lineTo(cam.p(x + half(y2), y2, z).dx, cam.p(x, y2, z).dy)
-          ..lineTo(cam.p(x + half(y1), y1, z).dx, cam.p(x, y1, z).dy)
-          ..close();
-    canvas.drawPath(band, Paint()..color = Colors.white.withValues(alpha: 0.9));
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = (outer - inner) * cam.scaleAt(z) * 0.5
+          ..strokeCap = StrokeCap.butt
+          ..color = Colors.white.withValues(alpha: 0.9);
+    for (var k = 0; k < 6; k++) {
+      final a0 = k * math.pi / 3 + 0.15;
+      final seg = Path()..moveTo(pt(mid, a0).dx, pt(mid, a0).dy);
+      for (var j = 1; j <= 8; j++) {
+        final p = pt(mid, a0 + j * 0.45 / 8 * 2);
+        seg.lineTo(p.dx, p.dy);
+      }
+      canvas.drawPath(seg, band);
+    }
   }
 
   /// 坑洞：畫在路面上的一個坑——黃色外框加較亮的坑緣，內部是由遠端坑壁（亮）

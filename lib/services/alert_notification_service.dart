@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
@@ -16,7 +17,7 @@ enum HazardCategory {
 
 /// 坑洞、障礙物、車輛逼近等危險事件的警示單例。
 ///
-/// 提示音一律由 App 自己播放（`audioplayers` 播放內建的 `assets/sounds/alert.wav`），
+/// 提示音一律由 App 自己播放（`audioplayers` 播放內建的 `assets/sounds/beep.wav` 短音），
 /// 不使用系統通知的聲音：音訊 session 設為 `playback`，iOS 即使手機切成靜音
 /// （響鈴/靜音切換鍵）也會照常出聲。
 /// Android：仍會發出系統通知（max importance + heads-up）顯示文字，但通知頻道
@@ -36,16 +37,38 @@ class AlertNotificationService {
   static const _channelId = 'ride_hazard_alerts_silent';
   static const _channelName = '騎乘危險警示';
   static const _channelDescription = '坑洞、障礙物與車輛逼近的即時警示通知';
-  static const _alertSoundAsset = 'sounds/alert.wav';
+  static const _beepAsset = 'sounds/beep.wav';
 
-  final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin _plugin =
+      FlutterLocalNotificationsPlugin();
   final AudioPlayer _player = AudioPlayer();
+
+  /// 聲音開關（選單控制），關閉時不發出任何提示音（震動與通知不受影響）。
+  final ValueNotifier<bool> soundEnabled = ValueNotifier(true);
+
+  Timer? _beepTimer;
+  int _beepIntervalMs = 0;
+  bool _beepReady = false;
 
   Future<void> init() async {
     // playback 類別會忽略 iOS 的靜音切換鍵，確保警示音一定聽得到。
-    await _player.setAudioContext(
-      AudioContext(iOS: AudioContextIOS(category: AVAudioSessionCategory.playback)),
-    );
+    try {
+      await _player.setAudioContext(
+        AudioContext(
+          iOS: AudioContextIOS(category: AVAudioSessionCategory.playback),
+          android: const AudioContextAndroid(
+            usageType: AndroidUsageType.alarm,
+            contentType: AndroidContentType.sonification,
+            audioFocus: AndroidAudioFocus.none, // 不搶其他 App 的音訊焦點
+          ),
+        ),
+      );
+      await _player.setReleaseMode(ReleaseMode.stop);
+      await _player.setSource(AssetSource(_beepAsset));
+      _beepReady = true;
+    } catch (e) {
+      debugPrint('[Sound] 初始化提示音失敗：$e');
+    }
     if (Platform.isIOS) return; // iOS 不使用系統通知，見上方類別註解。
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     await _plugin.initialize(
@@ -53,11 +76,15 @@ class AlertNotificationService {
     );
 
     await _plugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
         ?.deleteNotificationChannel(channelId: _legacyChannelId);
 
     await _plugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
         ?.createNotificationChannel(
           const AndroidNotificationChannel(
             _channelId,
@@ -70,7 +97,9 @@ class AlertNotificationService {
         );
 
     await _plugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
         ?.requestNotificationsPermission();
   }
 
@@ -83,8 +112,6 @@ class AlertNotificationService {
     required String title,
     required String body,
   }) async {
-    await _player.stop();
-    unawaited(_player.play(AssetSource(_alertSoundAsset)));
     if (Platform.isIOS) {
       await _longVibration();
       return;
@@ -108,6 +135,38 @@ class AlertNotificationService {
       notificationDetails: const NotificationDetails(android: androidDetails),
     );
     await _longVibration();
+  }
+
+  /// 依目前路況更新持續的嗶嗶聲。[intervalMs] 為嗶聲間隔（越小越急促），
+  /// null 表示沒有路況、停止發聲。聲音關閉時一律停止。
+  void updateBeep(int? intervalMs) {
+    if (intervalMs == null || !soundEnabled.value) {
+      _beepTimer?.cancel();
+      _beepTimer = null;
+      _beepIntervalMs = 0;
+      return;
+    }
+    if (_beepTimer != null && _beepIntervalMs == intervalMs) return;
+    _beepTimer?.cancel();
+    _beepIntervalMs = intervalMs;
+    _beep();
+    _beepTimer = Timer.periodic(
+      Duration(milliseconds: intervalMs),
+      (_) => _beep(),
+    );
+  }
+
+  Future<void> _beep() async {
+    try {
+      if (!_beepReady) {
+        await _player.setSource(AssetSource(_beepAsset));
+        _beepReady = true;
+      }
+      await _player.seek(Duration.zero);
+      await _player.resume();
+    } catch (e) {
+      debugPrint('[Sound] 播放提示音失敗：$e');
+    }
   }
 
   // 連續三次重擊震動、中間間隔 150ms，模擬出比單次 heavyImpact 更長的震動感。

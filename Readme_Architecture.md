@@ -119,13 +119,16 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
       通知 id，因此只會保留最新觸發的那一個方向。
     - 障礙物（`HazardCategory.obstacle`）：`hasObstacle` 由無變有才觸發一次，標題為
       「前方左側／中央／右側障礙物」，三個方向共用同一個通知 id。
+  - 持續嗶聲：`_updateBeep()` 在每次數據更新與聲音開關變動時，依前方危險算分（左前／右前各 1、正前 2、坑洞加障礙物同方向再 +1），
+    無危險則停止；有危險則呼叫 `updateBeep(間隔ms)`，間隔 = `900 − 分數×150`（限制 250～750ms），危險越多越急促。離開頁面時停止。
+    目前協定沒有前方距離，日後有距離可在此改為依距離換算。
   - 以 `RideHudMode`（`ble`／`simulation`）決定資料來源。`ble` 模式初始為
     `SimulationValues.empty`（全部安全、車速 0），`initState()` 訂閱
     `BleRadarService.values`，收到的數據（車速沿用目前值）直接餵給
     `_applySimulationValues()`，與模擬面板共用同一條更新／通知比對路徑；
     同時監聽 `status`，藍牙中途斷線（回到 idle）時自動 pop 回歡迎畫面。
     `simulation` 模式使用 `SimulationValues.demo`。
-  - 左下角為 `PopupMenuButton` 選單（≡ 圖示的 FAB）：「斷線」（藍牙模式會
+  - 左下角為 `PopupMenuButton` 選單（≡ 圖示的 FAB）：「聲音：開／關」（切換 `AlertNotificationService.soundEnabled`）、「斷線」（藍牙模式會
     先 `BleRadarService.disconnect()`，再回到歡迎畫面）；僅模擬模式額外有
     「模擬控制」項目以開啟 `SimulationSheet`。
   - 藍牙模式的車速改用 GPS：`initState()` 呼叫 `_startGps()`，檢查定位服務與
@@ -154,8 +157,8 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   `flutter_local_notifications`（僅 Android 使用）的通知 id。
 - **`AlertNotificationService`**：坑洞、障礙物、車輛逼近等危險事件的提示單例
   （`instance`）。**提示音一律由 App 自己播放**：用 `audioplayers` 的 `AudioPlayer`
-  播放內建的 `assets/sounds/alert.wav`（每次先 `stop()` 再播放），`init()` 將
-  `AudioContext` 設為 `AVAudioSessionCategory.playback`，iOS 即使切成靜音也會出聲；
+  預載內建的 `assets/sounds/beep.wav`（90ms 短嗶），`init()` 設定 `AudioContext`（iOS `playback`、Android alarm 用途且不搶音訊焦點）並 `setSource`，之後每次 `seek(0)`＋`resume()` 播放；
+  `soundEnabled`（`ValueNotifier<bool>`）為選單的聲音開關；`updateBeep(intervalMs)` 以 `Timer.periodic` 持續嗶聲（null 或聲音關閉則停止）；`notifyHazard()` 本身不再出聲，只發通知與震動；
   系統通知本身不再帶聲音。兩平台的畫面提示路徑不同：
   - **Android**：`main.dart` 於 `runApp` 前呼叫 `init()` 建立**無聲**通知頻道
     `ride_hazard_alerts_silent`（`Importance.max`、`playSound: false`，並刪除舊的
@@ -244,10 +247,10 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   以針孔透視（`_Cam`）將世界座標（自行車在原點、z 往前）投影到畫面，
   鏡頭在自行車後上方（高 20m、偏俯視），自行車約落在畫面 60% 高處：
   - 道路地面（不畫車道線，避免誤導為三車道視野；只有依車速往鏡頭方向捲動的淡色橫向格線）、前方路況由 `_RoadPainter`
-    繪製，遠端以漸層淡出到背景色；中央疊放車輛圖示（`assets/bike.png`）。
+    繪製，遠端以漸層淡出到背景色；中央疊放車輛圖示（`assets/bike.png`，放大 1.25 倍並在後方墊白色徑向光暈，避免與深色路面融為一體）。
   - 前方三個方向（左前／正前／右前，橫向間隔 2.8m）：坑洞畫成路面上的坑
     （透視橢圓，黃色外框加亮色坑緣，內部由遠端坑壁漸層到近黑的坑底，不與灰色路面
-    融為一體），障礙物以橘色三角錐（白色反光條）表示，兩者並存時障礙物在更前方；
+    融為一體），障礙物一律以橘色環形（路面上的圓環，環上均分 6 段白色反光）表示，兩者並存時障礙物在更前方；
     純路況提示、不閃爍。
   - 左／右後方來車由 `_CarsPainter` 以立方體繪製在自行車後方左右兩側：威脅等級為安全
     （距離遠或沒車）時不顯示方塊；否則前緣離車尾 `distanceMeters × 0.9` 公尺，並限制
@@ -321,4 +324,4 @@ RideHudScreen._sim  (setState)
   兩者皆以 `SimulationValues` 進入 `RideHudScreen`。若要改為更貼近真實
   感測器的模型，可把 `SimulationValues` 換成專屬的感測資料模型。
 - `RoadView` 的透視參數（鏡頭距離、車道寬、方塊大小）集中在 `_Cam` 與 `_CarsPainter`；
-  後續若要換成真實坑洞造型或更多威脅來源，可在此擴充。
+  後續若要換成真實坑洞／障礙物造型或更多威脅來源，可在此擴充。

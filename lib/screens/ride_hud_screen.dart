@@ -35,8 +35,9 @@ class _RideHudScreenState extends State<RideHudScreen> {
           : SimulationValues.demo;
   StreamSubscription<SimulationValues>? _bleSub;
   StreamSubscription<Position>? _gpsSub;
-  // 藍牙模式的車速（km/h）來自 GPS；尚未取得定位或權限被拒時為 null，顯示「—」。
-  int? _gpsSpeed;
+  // 藍牙模式的車速（km/h）來自 GPS；尚未取得定位、權限被拒或定位中斷時一律為 0。
+  int _gpsSpeed = 0;
+  Timer? _gpsWatchdog;
   ScaffoldMessengerState? _messenger;
 
   bool get _isBle => widget.mode == RideHudMode.ble;
@@ -79,6 +80,14 @@ class _RideHudScreenState extends State<RideHudScreen> {
         final kmh = p.speed < 0 ? 0.0 : p.speed * 3.6;
         final next = kmh < 1 ? 0 : kmh.round();
         if (mounted && next != _gpsSpeed) setState(() => _gpsSpeed = next);
+        // 訊號中斷（隧道、定位被關掉）時串流可能不再回報，5 秒沒更新就歸零。
+        _gpsWatchdog?.cancel();
+        _gpsWatchdog = Timer(const Duration(seconds: 5), () {
+          if (mounted && _gpsSpeed != 0) setState(() => _gpsSpeed = 0);
+        });
+      }, onError: (Object e) {
+        debugPrint('[GPS] 定位串流錯誤：$e');
+        if (mounted && _gpsSpeed != 0) setState(() => _gpsSpeed = 0);
       });
     } catch (e) {
       debugPrint('[GPS] 無法取得車速：$e');
@@ -99,6 +108,7 @@ class _RideHudScreenState extends State<RideHudScreen> {
     AlertNotificationService.instance.updateBeep(null);
     _bleSub?.cancel();
     _gpsSub?.cancel();
+    _gpsWatchdog?.cancel();
     if (_isBle) {
       BleRadarService.instance.status.removeListener(_onBleStatus);
       BleRadarService.instance.dataStatus.removeListener(_onDataStatus);
@@ -360,7 +370,7 @@ class _RideHudScreenState extends State<RideHudScreen> {
                         ? const Center(child: Text('尚無有效資料，雷達暫停顯示'))
                         : RoadView(
                           threats: threats,
-                          speedKmh: (speed ?? 0).toDouble(),
+                          speedKmh: speed.toDouble(),
                           frontLeft: _sim.frontLeft,
                           frontCenter: _sim.frontCenter,
                           frontRight: _sim.frontRight,

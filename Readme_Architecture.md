@@ -11,7 +11,7 @@
 
 - 平台：Flutter App（Android、iOS）
 - 語言：Dart（SDK `^3.7.2`）
-- 主要套件：`google_maps_flutter`、`geolocator`、`flutter_blue_plus`（BLE）、`audioplayers`、`shared_preferences`
+- 主要套件：`google_maps_flutter`、`geolocator`、`flutter_blue_plus`（BLE）、`audioplayers`、`shared_preferences`、`flutter_compass`
 
 ## 目錄結構
 
@@ -132,7 +132,7 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   - 藍牙模式的車速改用 GPS：`initState()` 呼叫 `_startGps()`，檢查定位服務與
     權限（必要時請求）後訂閱 `Geolocator.getPositionStream`（`LocationAccuracy.best`），
     `Position.speed`（m/s）換算為 km/h 並四捨五入、低於 1 km/h 視為 0，存入
-    `_gpsSpeed` 供 `SpeedGauge` 顯示；未取得定位或權限被拒時顯示「—」。`dispose()`
+    `_gpsSpeed` 供 `SpeedGauge` 顯示；未取得定位、權限被拒、定位串流錯誤或超過 5 秒沒有更新（`_gpsWatchdog`）時車速一律為 0。`dispose()`
     取消訂閱。模擬模式仍使用模擬面板的車速滑桿。
   - 除錯模式（`BleRadarService.debugMode` 開啟且為藍牙模式）時，雷達下方多一個
     黑底 `_RawDataPanel`（高 150，底部留白避開左下選單鈕），監聽 `rawLog`
@@ -215,9 +215,11 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   - 用 `geolocator` 取得裝置目前位置；若定位失敗（權限被拒/服務關閉）
     或 8 秒內未能取得定位（`Geolocator.getCurrentPosition()` 加上
     `.timeout()`，避免 iOS 在收不到定位訊號時無限期卡在轉圈圈），
-    回退到硬編碼的備援座標（南台科技大學一帶）。
+    回退到硬編碼的備援座標（22°59'19"N、120°11'14"E）。
   - 用 `google_maps_flutter` 顯示深色地圖（`GoogleMap.style` 套用內建的 `_darkMapStyle` JSON），開啟原生「目前位置」藍點
-    （`myLocationEnabled`），並提供右下角「回到目前位置」按鈕重新置中鏡頭。
+    （`myLocationEnabled`），並提供右下角「回到目前位置」按鈕重新置中鏡頭。地圖會隨手機朝向旋轉：訂閱 `flutter_compass` 的 `FlutterCompass.events`，
+    以最短旋轉方向加低通平滑（變化小於 2° 忽略、至少間隔 80ms）後用 `moveCamera` 設定 `bearing`，鏡頭中心與縮放沿用使用者拖曳後的值（`onCameraMove`）；
+    沒有羅盤感測器的裝置維持正北朝上。
   - Android/iOS 的 Google Maps API 金鑰分別位於
     `android/local.properties` 與 `ios/Flutter/ApiKeys.xcconfig`（不進版控）。
     版控中附上對應範本 `android/local.properties.example` 與

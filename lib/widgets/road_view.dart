@@ -290,6 +290,19 @@ class _RoadPainter extends CustomPainter {
       canvas.drawLine(cam.p(-half, 0, z), cam.p(half, 0, z), grid);
     }
 
+    // 遠端淡出到背景色，避免道路在地平線硬切。先畫淡出、再畫路況，
+    // 遠處的弧條與坑洞才不會被淡出漸層蓋暗。
+    final fadeRect = Rect.fromLTWH(0, 0, size.width, size.height * 0.4);
+    canvas.drawRect(
+      fadeRect,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [HudColors.surface, Color(0x000A0B0D)],
+        ).createShader(fadeRect),
+    );
+
     // 前方路況，左前 / 正前 / 右前：坑洞是畫在路面上的坑、障礙物是自行車前方的弧形燈條，
     // 兩者並存時坑洞與弧形燈條同時顯示。
     // 坑洞放在各自扇區中線方向（右前 30°、正前 90°、左前 150°），位於弧條內側。
@@ -323,17 +336,6 @@ class _RoadPainter extends CustomPainter {
       }
     }
 
-    // 遠端淡出到背景色，避免道路在地平線硬切。
-    final fadeRect = Rect.fromLTWH(0, 0, size.width, size.height * 0.4);
-    canvas.drawRect(
-      fadeRect,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [HudColors.surface, Color(0x000A0B0D)],
-        ).createShader(fadeRect),
-    );
   }
 
   /// 坑洞：畫在路面上的一個坑——黃色外框加較亮的坑緣，內部是由遠端坑壁（亮）

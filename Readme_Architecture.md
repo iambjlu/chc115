@@ -11,7 +11,7 @@
 
 - 平台：Flutter App（Android、iOS）
 - 語言：Dart（SDK `^3.7.2`）
-- 主要套件：`google_maps_flutter`、`geolocator`、`flutter_blue_plus`（BLE）
+- 主要套件：`google_maps_flutter`、`geolocator`、`flutter_blue_plus`（BLE）、`audioplayers`、`shared_preferences`
 
 ## 目錄結構
 
@@ -158,7 +158,7 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
 - **`AlertNotificationService`**：坑洞、障礙物、車輛逼近等危險事件的提示單例
   （`instance`）。**提示音一律由 App 自己播放**：用 `audioplayers` 的 `AudioPlayer`
   預載內建的 `assets/sounds/beep.wav`（90ms 短嗶），`init()` 設定 `AudioContext`（iOS `playback`、Android alarm 用途且不搶音訊焦點）並 `setSource`，之後每次 `seek(0)`＋`resume()` 播放；
-  `soundEnabled`（`ValueNotifier<bool>`）為選單的聲音開關；`updateBeep(intervalMs)` 以 `Timer.periodic` 持續嗶聲（null 或聲音關閉則停止）；`notifyHazard()` 本身不再出聲，只發通知與震動；
+  `soundEnabled`（`ValueNotifier<bool>`）為選單的聲音開關，預設關閉，並以 `shared_preferences` 記住設定（`init()` 讀回、變更時寫入）；`updateBeep(intervalMs)` 以 `Timer.periodic` 持續嗶聲（null 或聲音關閉則停止）；`notifyHazard()` 本身不再出聲，只發通知與震動；
   系統通知本身不再帶聲音。兩平台的畫面提示路徑不同：
   - **Android**：`main.dart` 於 `runApp` 前呼叫 `init()` 建立**無聲**通知頻道
     `ride_hazard_alerts_silent`（`Importance.max`、`playSound: false`，並刪除舊的
@@ -256,7 +256,7 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
     右後 4 段、左後 4 段）：威脅等級為安全（距離遠或沒車）時不顯示；注意亮 2 段（黃）、危險亮 4 段（紅），
     越靠後方中央越先亮，距離越近燈條離車身越近；標記為「逼近中」時硬切閃爍，由單一時鐘（`_Clock`，`Ticker`）驅動，
     左右同步（刻意不做透明度補間）。
-  - 立體弧形燈條由共用函式 `_arcSegment` 繪製：以車身中心為圓心的橢圓環（半徑略大於車身，後方依距離 5～30m 向外推 0.1～1.3m，距離越近越貼車；前方固定 0.5m），每段以頂面、內外側壁與兩端斷面擠出 0.45m 厚度，
+  - 立體弧形燈條由共用函式 `_arcSegment` 繪製：以車身中心為圓心的橢圓環（半徑略大於車身，後方依距離 5～30m 向外推 0.6～3.0m，距離越近越貼車；前方固定 1.4m），每段以頂面、內外側壁與兩端斷面擠出 0.18m 厚度，
     外側帶光暈。前方障礙物（`_RoadPainter`）沿前方半圈分左前／正前／右前三區，各 3 段，
     因前方沒有距離判斷，一律使用橘色。
     painter 以時鐘作為 `repaint` 來源，捲動與閃爍不需重建整個 widget 樹。

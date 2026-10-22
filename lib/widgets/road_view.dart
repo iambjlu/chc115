@@ -174,6 +174,16 @@ Color _shade(Color c, double lightnessDelta) {
 const _arcSegs = 9;
 const _frontOrange = Color(0xFFFF8A1F);
 
+/// 前方橘色弧條（gapMeters 0.5）中線離車身中心的 z 距離；坑洞放在同一距離。
+const _frontArcZ = _arcZK * (1.65 + _frontGap + 0.25);
+
+/// 前方弧條內緣離車身的間距（前方沒有距離資料，固定值）。
+const _frontGap = 1.4;
+
+/// 鏡頭是低角度俯視（地面縱深被壓縮約 1/5），而自行車圖是正上方視角；
+/// 弧條縱向半徑乘上此係數補償，才能在畫面上真的包住車圖。
+const _arcZK = 4.5;
+
 /// 自行車周圍的立體弧形燈條中的一小段（倒車雷達樣式）：以車身中心為圓心的橢圓環，
 /// 沿前方（[rear] 為 false）或後方半圈分成 [_arcSegs] 段，第 [k] 段為 0..8（由右到左）。
 /// [gapMeters] 為燈條內緣離車身的額外距離（越近越貼車）。以 [top] 為頂面色、
@@ -187,15 +197,15 @@ void _arcSegment(
   required double gapMeters,
 }) {
   const gap = 0.05; // 段與段之間的縫（弧度）
-  const height = 0.45;
+  const height = 0.18;
   // 內緣橢圓半徑：略大於車身（寬約 1.5m、長約 3m），再加上距離造成的外推。
-  final rx0 = 0.95 + gapMeters, rz0 = 1.75 + gapMeters * 1.2;
-  final rx1 = rx0 + 0.45, rz1 = rz0 + 0.55;
+  final rx0 = 0.9 + gapMeters, rz0 = 1.65 + gapMeters;
+  final rx1 = rx0 + 0.45, rz1 = rz0 + 0.5;
   final sign = rear ? -1.0 : 1.0;
   Offset pt(bool outer, double a, double h) => cam.p(
     (outer ? rx1 : rx0) * math.cos(a),
     h,
-    sign * (outer ? rz1 : rz0) * math.sin(a),
+    sign * _arcZK * (outer ? rz1 : rz0) * math.sin(a),
   );
   final a0 = k * math.pi / _arcSegs + gap;
   final a1 = (k + 1) * math.pi / _arcSegs - gap;
@@ -286,7 +296,7 @@ class _RoadPainter extends CustomPainter {
     const slots = [(-2.8, 0), (0.0, 1), (2.8, 2)];
     final hazards = [frontLeft, frontCenter, frontRight];
     for (final (x, i) in slots) {
-      if (hazards[i].hasPothole) _pit(canvas, cam, x, 12);
+      if (hazards[i].hasPothole) _pit(canvas, cam, x, _frontArcZ);
     }
     // 障礙物：自行車前方的分段弧形燈條（倒車雷達樣式），左前／正前／右前各一區。
     // 前方沒有距離判斷，一律用橘色。sectorOn 順序為左前、正前、右前；k 0..2 右前、3..5 正前、6..8 左前。
@@ -298,7 +308,7 @@ class _RoadPainter extends CustomPainter {
           k,
           rear: false,
           top: _frontOrange,
-          gapMeters: 0.5, // 前方沒有距離，固定中等間距
+          gapMeters: _frontGap,
         );
       }
     }
@@ -390,8 +400,8 @@ class _CarsPainter extends CustomPainter {
       // k 由右到左 0..8；後方正中央（k=4）留空，右後 0..3、左後 5..8；越靠中央越先亮。
       final order = left ? [5, 6, 7, 8] : [3, 2, 1, 0];
       final count = t.level == ThreatLevel.danger ? 4 : 2;
-      // 距離 5m 貼著車身、30m 外推約 1.3m：越近燈條越靠車。
-      final gap = 0.1 + (t.distanceMeters.clamp(5, 30) - 5) / 25 * 1.2;
+      // 距離 5m 離車身 0.6m、30m 外推到 3m：越近燈條越靠車。
+      final gap = 0.6 + (t.distanceMeters.clamp(5, 30) - 5) / 25 * 2.4;
       for (final k in order.take(count)) {
         _arcSegment(
           canvas,

@@ -5,6 +5,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// 危險事件的分類，每一類在系統通知中各自固定一個通知 id，
 /// 因此同一類的新通知會直接覆蓋舊通知，畫面上只會保留該類最新的一則。
@@ -44,13 +45,24 @@ class AlertNotificationService {
   final AudioPlayer _player = AudioPlayer();
 
   /// 聲音開關（選單控制），關閉時不發出任何提示音（震動與通知不受影響）。
-  final ValueNotifier<bool> soundEnabled = ValueNotifier(true);
+  /// 預設關閉，設定會用 `shared_preferences` 記住（`init()` 讀回、變更時寫入）。
+  final ValueNotifier<bool> soundEnabled = ValueNotifier(false);
+  static const _soundPrefKey = 'sound_enabled';
 
   Timer? _beepTimer;
   int _beepIntervalMs = 0;
   bool _beepReady = false;
 
   Future<void> init() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      soundEnabled.value = prefs.getBool(_soundPrefKey) ?? false;
+      soundEnabled.addListener(() {
+        prefs.setBool(_soundPrefKey, soundEnabled.value);
+      });
+    } catch (e) {
+      debugPrint('[Sound] 讀取聲音設定失敗：$e');
+    }
     // playback 類別會忽略 iOS 的靜音切換鍵，確保警示音一定聽得到。
     try {
       await _player.setAudioContext(

@@ -199,14 +199,16 @@ class _RideHudScreenState extends State<RideHudScreen> {
     setState(() => _sim = next);
     _updateBeep();
 
-    if (next.leftDistance < previous.leftDistance) {
+    if (next.leftDistance < previous.leftDistance &&
+        previous.leftDistance < ThreatThresholds.noVehicleDistance) {
       _notifyHazard(
         category: HazardCategory.distanceShortening,
         title: '左後方車輛逐漸接近',
         body: '與後方車輛距離持續縮短',
       );
     }
-    if (next.rightDistance < previous.rightDistance) {
+    if (next.rightDistance < previous.rightDistance &&
+        previous.rightDistance < ThreatThresholds.noVehicleDistance) {
       _notifyHazard(
         category: HazardCategory.distanceShortening,
         title: '右後方車輛逐漸接近',

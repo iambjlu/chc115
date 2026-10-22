@@ -129,12 +129,12 @@ class _RoadViewState extends State<RoadView>
 
 /// 針孔透視：世界座標 x 往右、h 往上、z 往前（公尺，自行車在原點），
 /// 鏡頭在自行車後方 [camBehind] 公尺、高度 [camHeight] 公尺（偏俯視），
-/// 地平線位置依版面算出，讓自行車落在畫面約 60% 高處。
+/// 地平線位置依版面算出，讓自行車落在畫面約 42% 高處。
 class _Cam {
   _Cam(Size size)
     : cx = size.width / 2,
       f = size.width * 7,
-      yh = size.height * 0.60 - size.width * 7 * camHeight / camBehind;
+      yh = size.height * 0.42 - size.width * 7 * camHeight / camBehind;
 
   static const double camBehind = 100;
   static const double camHeight = 20;
@@ -296,7 +296,7 @@ class _RoadPainter extends CustomPainter {
     const slots = [(-2.8, 0), (0.0, 1), (2.8, 2)];
     final hazards = [frontLeft, frontCenter, frontRight];
     for (final (x, i) in slots) {
-      if (hazards[i].hasPothole) _pit(canvas, cam, x, _frontArcZ);
+      if (hazards[i].hasPothole) _pit(canvas, cam, x, _frontArcZ - 3.5);
     }
     // 障礙物：自行車前方的分段弧形燈條（倒車雷達樣式），左前／正前／右前各一區。
     // 前方沒有距離判斷，一律用橘色。sectorOn 順序為左前、正前、右前；k 0..2 右前、3..5 正前、6..8 左前。
@@ -374,8 +374,8 @@ class _RoadPainter extends CustomPainter {
       old.frontRight != frontRight;
 }
 
-/// 左／右後方來車：自行車後方的立體弧形燈條（倒車雷達樣式）。安全（距離遠或沒車）不顯示；
-/// 注意亮 2 段（黃）、危險亮 4 段（紅），標記為「逼近中」時硬切閃爍。
+/// 左／右後方來車：自行車後方的立體弧形燈條（倒車雷達樣式）。沒車不顯示；
+/// 遠亮綠、中亮黃、近亮紅，每側固定 4 段，標記為「逼近中」時硬切閃爍。
 class _CarsPainter extends CustomPainter {
   _CarsPainter({required this.clock, required this.threats})
     : super(repaint: clock);
@@ -393,15 +393,16 @@ class _CarsPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final cam = _Cam(size);
     for (final t in threats) {
-      if (t.level == ThreatLevel.safe) continue;
+      if (!t.hasVehicle) continue; // 沒車不畫；遠（安全）畫綠色
       // 逼近中：硬切閃爍（左右共用同一個時鐘，節奏同步）。
       if (t.isApproaching && !clock.blinkVisible) continue;
       final left = t.side == ThreatSide.left;
-      // k 由右到左 0..8；後方正中央（k=4）留空，右後 0..3、左後 5..8；越靠中央越先亮。
+      // k 由右到左 0..8；後方正中央（k=4）留空，右後 0..3、左後 5..8。
+      // 不論距離，塊數固定 4 段（圍成車身後半圈），距離只影響顏色與離車遠近。
       final order = left ? [5, 6, 7, 8] : [3, 2, 1, 0];
-      final count = t.level == ThreatLevel.danger ? 4 : 2;
-      // 距離 5m 離車身 0.6m、30m 外推到 3m：越近燈條越靠車。
-      final gap = 0.6 + (t.distanceMeters.clamp(5, 30) - 5) / 25 * 2.4;
+      const count = 4;
+      // 距離 5m 離車身 0.5m、30m 外推到 1.3m：越近燈條越靠車。
+      final gap = 0.5 + (t.distanceMeters.clamp(5, 30) - 5) / 25 * 0.8;
       for (final k in order.take(count)) {
         _arcSegment(
           canvas,

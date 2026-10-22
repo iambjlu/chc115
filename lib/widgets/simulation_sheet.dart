@@ -147,8 +147,8 @@ class _ThreatGroup extends StatelessWidget {
     required this.onApproachingChanged,
   });
 
-  static const distanceOptions = [5.0, 15.0, 30.0]; // 近 / 中 / 遠
-  static final _distanceLabels = {5.0: '近', 15.0: '中', 30.0: '遠'};
+  static const distanceOptions = [5.0, 15.0, 30.0, 99.0]; // 近 / 中 / 遠 / 沒車
+  static final _distanceLabels = {5.0: '近', 15.0: '中', 30.0: '遠', 99.0: '沒車'};
 
   final String title;
   final Color tagColor;

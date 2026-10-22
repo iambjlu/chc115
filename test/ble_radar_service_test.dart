@@ -32,10 +32,10 @@ void main() {
       expect(BleRadarService.parse(packet, base), isNull, reason: packet);
     }
   });
-  test('distance 0 means no vehicle and is treated as farthest', () {
+  test('distance 0 means no vehicle (distinct from far)', () {
     final v = BleRadarService.parse('0,0,0,0,1,0,0', base)!;
-    expect(v.leftDistance, 30);
-    expect(v.rightDistance, 30);
+    expect(v.leftDistance, 99);
+    expect(v.rightDistance, 99);
     expect(v.frontLeft, FrontHazard.pothole);
   });
   test('front codes 2 (obstacle) and 3 (both) are decoded, 4 is rejected', () {

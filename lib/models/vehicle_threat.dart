@@ -9,6 +9,9 @@ enum ThreatLevel { safe, caution, danger }
 class ThreatThresholds {
   static const double safeDistance = 25; // 公尺
   static const double cautionDistance = 10; // 公尺
+
+  /// 「沒車」的距離值（遠 30m 以外的哨兵值），用來和「遠」區分：沒車不畫、遠畫綠色。
+  static const double noVehicleDistance = 99; // 公尺
 }
 
 @immutable
@@ -22,6 +25,9 @@ class VehicleThreat {
   final ThreatSide side;
   final double distanceMeters;
   final bool isApproaching;
+
+  /// 該側是否偵測到車輛（距離為「沒車」哨兵值時為 false）。
+  bool get hasVehicle => distanceMeters < ThreatThresholds.noVehicleDistance;
 
   ThreatLevel get level {
     if (distanceMeters >= ThreatThresholds.safeDistance) return ThreatLevel.safe;

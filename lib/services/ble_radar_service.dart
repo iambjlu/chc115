@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../models/simulation_values.dart';
+import '../models/vehicle_threat.dart';
 
 enum BleRadarStatus { idle, scanning, connecting, connected }
 
@@ -221,7 +222,7 @@ class BleRadarService {
     if (n.any((e) => e == null)) return null;
 
     double? distance(int code) => switch (code) {
-      0 => 30.0, // 沒車，視同最遠
+      0 => ThreatThresholds.noVehicleDistance, // 沒車（與「遠」區分）
       1 => 30.0, // 遠
       2 => 15.0, // 中
       3 => 5.0, // 近

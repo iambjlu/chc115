@@ -52,9 +52,9 @@ class SimulationValues {
   /// 藍牙模式剛進入、尚未收到任何數據時的初始畫面：全部安全、無警示。
   static const empty = SimulationValues(
     bikeSpeed: 0,
-    leftDistance: 30,
+    leftDistance: 99, // 沒車
     leftApproaching: false,
-    rightDistance: 30,
+    rightDistance: 99,
     rightApproaching: false,
     frontLeft: FrontHazard.none,
     frontCenter: FrontHazard.none,

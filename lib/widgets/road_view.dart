@@ -218,14 +218,17 @@ class _RoadPainter extends CustomPainter {
     }
 
     // 前方路況，左前 / 正前 / 右前：坑洞是畫在路面上的坑、障礙物是橘色環形，
-    // 兩者並存時障礙物放在坑洞更前方。由遠到近繪製。
+    // 兩者並存時障礙物疊在坑洞上面。
     const slots = [(-2.8, 0), (0.0, 1), (2.8, 2)];
     final hazards = [frontLeft, frontCenter, frontRight];
     for (final (x, i) in slots) {
-      if (hazards[i].hasObstacle) _cone(canvas, cam, x, 22);
-    }
-    for (final (x, i) in slots) {
       if (hazards[i].hasPothole) _pit(canvas, cam, x, 12);
+    }
+    // 障礙物畫在坑洞之後；兩者並存時障礙物直接疊在該坑上面。
+    for (final (x, i) in slots) {
+      if (hazards[i].hasObstacle) {
+        _cone(canvas, cam, x, hazards[i].hasPothole ? 12 : 22);
+      }
     }
 
     // 遠端淡出到背景色，避免道路在地平線硬切。

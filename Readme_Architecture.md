@@ -250,13 +250,15 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
     繪製，遠端以漸層淡出到背景色；中央疊放車輛圖示（`assets/bike.png`，放大 1.25 倍並在後方墊白色徑向光暈，避免與深色路面融為一體）。
   - 前方三個方向（左前／正前／右前，橫向間隔 2.8m）：坑洞畫成路面上的坑
     （透視橢圓，黃色外框加亮色坑緣，內部由遠端坑壁漸層到近黑的坑底，不與灰色路面
-    融為一體），障礙物一律以自行車前方的分段弧形燈條（倒車雷達樣式，9 小段分左前／正前／右前三區，有障礙物的區段亮紅橘色帶光暈）表示，坑洞仍畫在路面上；
+    融為一體），障礙物一律以自行車前方的分段弧形燈條（倒車雷達樣式，立體，分左前／正前／右前三區，有障礙物的區段亮橘色）表示，坑洞仍畫在路面上；
     純路況提示、不閃爍。
-  - 左／右後方來車由 `_CarsPainter` 以立方體繪製在自行車後方左右兩側：威脅等級為安全
-    （距離遠或沒車）時不顯示方塊；否則前緣離車尾 `distanceMeters × 0.9` 公尺，並限制
-    頂面前緣在畫面上不超過自行車中心（不會「超過」車身）。顏色依
-    `VehicleThreat.level`（黃／紅）呈現威脅程度與距離；標記為「逼近中」時方塊硬切閃爍，
-    由單一時鐘（`_Clock`，`Ticker`）驅動，左右同步（刻意不做透明度補間）。
+  - 左／右後方來車由 `_CarsPainter` 以立體弧形燈條繪製在自行車後方半圈（9 小段，後方正中央留空，
+    右後 4 段、左後 4 段）：威脅等級為安全（距離遠或沒車）時不顯示；注意亮 2 段（黃）、危險亮 4 段（紅），
+    越靠後方中央越先亮；標記為「逼近中」時硬切閃爍，由單一時鐘（`_Clock`，`Ticker`）驅動，
+    左右同步（刻意不做透明度補間）。
+  - 立體弧形燈條由共用函式 `_arcSegment` 繪製：每段以頂面、內外側壁與兩端斷面擠出 0.45m 厚度，
+    外側帶光暈。前方障礙物（`_RoadPainter`）沿前方半圈分左前／正前／右前三區，各 3 段，
+    因前方沒有距離判斷，一律使用橘色。
     painter 以時鐘作為 `repaint` 來源，捲動與閃爍不需重建整個 widget 樹。
 - **`SimulationSheet`**：`StatefulWidget`，以 modal bottom sheet 形式提供：
   - 車速滑桿（`_SliderField`）。
@@ -285,7 +287,7 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
         ▼
 RideHudScreen._sim  (setState)
         │
-        ├─► _threats: List<VehicleThreat>  ──► RoadView（立方體閃爍、路面坑洞、三角錐）
+        ├─► _threats: List<VehicleThreat>  ──► RoadView（後方弧形燈條閃爍、路面坑洞、前方橘色弧形燈條）
         ├─► _activeAlert                   ──► _AlertLines（頂部警示文字）
         └─► _sim.bikeSpeed                 ──► SpeedGauge（車速儀表）
 ```
@@ -323,5 +325,5 @@ RideHudScreen._sim  (setState)
   `BleRadarService` 接收 AMB82 板子送來的（目前仍是模擬的）BLE 數據，
   兩者皆以 `SimulationValues` 進入 `RideHudScreen`。若要改為更貼近真實
   感測器的模型，可把 `SimulationValues` 換成專屬的感測資料模型。
-- `RoadView` 的透視參數（鏡頭距離、車道寬、方塊大小）集中在 `_Cam` 與 `_CarsPainter`；
+- `RoadView` 的透視參數（鏡頭距離、弧形半徑與厚度）集中在 `_Cam` 與 `_arcSegment`；
   後續若要換成真實坑洞／障礙物造型或更多威脅來源，可在此擴充。

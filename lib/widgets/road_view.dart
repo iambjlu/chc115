@@ -8,8 +8,8 @@ import '../models/vehicle_threat.dart';
 import '../theme/hud_colors.dart';
 
 /// 虛擬道路檢視：鏡頭在自行車後上方往前看，自行車位於道路中間，
-/// 左右後方來車以立方體顯示在自行車後方的左右兩側（距離越近越靠近車身），
-/// 前方坑洞畫成路面上的坑、障礙物為自行車前方的弧形燈條。標記為「逼近中」的立方體會硬切閃爍
+/// 左右後方來車與前方障礙物都以立體弧形燈條環繞在自行車前後（後方依距離黃／紅、前方一律橘色），
+/// 前方坑洞畫成路面上的坑。標記為「逼近中」的後方弧條會硬切閃爍
 /// （無淡入淡出），左右共用同一個時鐘，節奏永遠同步。
 /// 地面橫向格線依車速往後捲動，營造行進感（刻意不畫車道線）。
 class RoadView extends StatefulWidget {
@@ -140,7 +140,6 @@ class _Cam {
   static const double camHeight = 20;
   static const double gridPeriod = 6;
   static const double bikeLength = 2.4;
-  static const double laneX = 3; // 左右來車的橫向位置
   static const double roadHalf = 5.2;
 
   final double cx;
@@ -156,7 +155,6 @@ class _Cam {
   double scaleAt(double z) => f / (z + camBehind);
 }
 
-const _obstacle = Color(0xFFFF6A1F);
 
 Path _poly(List<Offset> pts) {
   final path = Path()..moveTo(pts.first.dx, pts.first.dy);
@@ -171,6 +169,64 @@ Color _shade(Color c, double lightnessDelta) {
   return hsl
       .withLightness((hsl.lightness + lightnessDelta).clamp(0.0, 1.0))
       .toColor();
+}
+
+const _arcSegs = 9;
+const _frontOrange = Color(0xFFFF8A1F);
+
+/// 自行車周圍的立體弧形燈條中的一小段（倒車雷達樣式）：沿前方（[rear] 為 false）或後方半圈
+/// 分成 [_arcSegs] 段，第 [k] 段為 0..8（由右到左）。以 [top] 為頂面色、較暗的側面墊出厚度，
+/// 外側帶光暈。
+void _arcSegment(
+  Canvas canvas,
+  _Cam cam,
+  int k, {
+  required bool rear,
+  required Color top,
+}) {
+  const gap = 0.05; // 段與段之間的縫（弧度）
+  const r0 = 1.35, r1 = 1.85, height = 0.45;
+  final sign = rear ? -1.0 : 1.0;
+  Offset pt(double r, double a, double h) =>
+      cam.p(r * math.cos(a), h, sign * (1.0 + 1.1 * r * math.sin(a)));
+  final a0 = k * math.pi / _arcSegs + gap;
+  final a1 = (k + 1) * math.pi / _arcSegs - gap;
+  const n = 4;
+  List<Offset> edge(double r, double h) => [
+    for (var j = 0; j <= n; j++) pt(r, a0 + (a1 - a0) * j / n, h),
+  ];
+  Path quad(List<Offset> lowA, List<Offset> highA) =>
+      _poly([...lowA, ...highA.reversed]);
+
+  final outerLow = edge(r1, 0), outerHigh = edge(r1, height);
+  final innerLow = edge(r0, 0), innerHigh = edge(r0, height);
+  final topPath = _poly([...outerHigh, ...innerHigh.reversed]);
+
+  canvas.drawPath(
+    topPath,
+    Paint()
+      ..color = top.withValues(alpha: 0.7)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 7),
+  );
+  final side = Paint()..color = _shade(top, -0.25);
+  canvas.drawPath(quad(outerLow, outerHigh), side);
+  canvas.drawPath(quad(innerLow, innerHigh), side);
+  // 兩端斷面
+  for (final j in [0, n]) {
+    canvas.drawPath(
+      _poly([outerLow[j], outerHigh[j], innerHigh[j], innerLow[j]]),
+      Paint()..color = _shade(top, -0.15),
+    );
+  }
+  canvas.drawPath(topPath, Paint()..color = top);
+  canvas.drawPath(
+    topPath,
+    Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.1
+      ..strokeJoin = StrokeJoin.round
+      ..color = _shade(top, 0.22),
+  );
 }
 
 class _RoadPainter extends CustomPainter {
@@ -225,7 +281,12 @@ class _RoadPainter extends CustomPainter {
       if (hazards[i].hasPothole) _pit(canvas, cam, x, 12);
     }
     // 障礙物：自行車前方的分段弧形燈條（倒車雷達樣式），左前／正前／右前各一區。
-    _arc(canvas, cam, [for (final h in hazards) h.hasObstacle]);
+    // 前方沒有距離判斷，一律用橘色。sectorOn 順序為左前、正前、右前；k 0..2 右前、3..5 正前、6..8 左前。
+    for (var k = 0; k < _arcSegs; k++) {
+      if (hazards[2 - k ~/ 3].hasObstacle) {
+        _arcSegment(canvas, cam, k, rear: false, top: _frontOrange);
+      }
+    }
 
     // 遠端淡出到背景色，避免道路在地平線硬切。
     final fadeRect = Rect.fromLTWH(0, 0, size.width, size.height * 0.4);
@@ -238,46 +299,6 @@ class _RoadPainter extends CustomPainter {
           colors: [HudColors.surface, Color(0x000A0B0D)],
         ).createShader(fadeRect),
     );
-  }
-
-  /// 障礙物弧形燈條：沿自行車前方半圈分成 9 小段（右前 / 正前 / 左前各 3 段），
-  /// 該方向有障礙物時整區亮紅橘色並帶光暈，沒有障礙物的區域不畫。
-  void _arc(Canvas canvas, _Cam cam, List<bool> sectorOn) {
-    const segs = 9;
-    const gap = 0.05; // 段與段之間的縫（弧度）
-    const r0 = 1.35, r1 = 1.85;
-    Offset pt(double r, double a) =>
-        cam.p(r * math.cos(a), 0, 1.0 + 1.1 * r * math.sin(a));
-    for (var k = 0; k < segs; k++) {
-      // k 0..2 右前、3..5 正前、6..8 左前；sectorOn 順序為左前、正前、右前。
-      final on = sectorOn[2 - k ~/ 3];
-      if (!on) continue;
-      final a0 = k * math.pi / segs + gap, a1 = (k + 1) * math.pi / segs - gap;
-      final path = Path()..moveTo(pt(r1, a0).dx, pt(r1, a0).dy);
-      for (var j = 1; j <= 4; j++) {
-        final p = pt(r1, a0 + (a1 - a0) * j / 4);
-        path.lineTo(p.dx, p.dy);
-      }
-      for (var j = 4; j >= 0; j--) {
-        final p = pt(r0, a0 + (a1 - a0) * j / 4);
-        path.lineTo(p.dx, p.dy);
-      }
-      path.close();
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = _obstacle.withValues(alpha: 0.7)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
-      );
-      canvas.drawPath(path, Paint()..color = const Color(0xFFFF3B1F));
-      canvas.drawPath(
-        path,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.2
-          ..color = const Color(0xFFFFB27A),
-      );
-    }
   }
 
   /// 坑洞：畫在路面上的一個坑——黃色外框加較亮的坑緣，內部是由遠端坑壁（亮）
@@ -328,14 +349,14 @@ class _RoadPainter extends CustomPainter {
       old.frontRight != frontRight;
 }
 
+/// 左／右後方來車：自行車後方的立體弧形燈條（倒車雷達樣式）。安全（距離遠或沒車）不顯示；
+/// 注意亮 2 段（黃）、危險亮 4 段（紅），標記為「逼近中」時硬切閃爍。
 class _CarsPainter extends CustomPainter {
   _CarsPainter({required this.clock, required this.threats})
     : super(repaint: clock);
 
   final _Clock clock;
   final List<VehicleThreat> threats;
-
-  static const _cubeSize = 1.2;
 
   Color _colorFor(ThreatLevel level) => switch (level) {
     ThreatLevel.safe => HudColors.safe,
@@ -346,86 +367,18 @@ class _CarsPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final cam = _Cam(size);
-    // 方塊最靠近車身的位置：頂面前緣不可高過自行車中心（畫面上不超過車身）。
-    final nearest =
-        cam.f * (cam.hc - _cubeSize) / (cam.p(0, 0, 0).dy - cam.yh) -
-        _Cam.camBehind;
     for (final t in threats) {
+      if (t.level == ThreatLevel.safe) continue;
+      // 逼近中：硬切閃爍（左右共用同一個時鐘，節奏同步）。
+      if (t.isApproaching && !clock.blinkVisible) continue;
       final left = t.side == ThreatSide.left;
-      final x = left ? -_Cam.laneX : _Cam.laneX;
-      // 距離遠（安全）時不顯示方塊。
-      if (t.level != ThreatLevel.safe) {
-        // 前緣離車尾 distanceMeters*0.9 公尺，並不超過 nearest 限制。
-        final zFar = math.min(
-          -(_Cam.bikeLength / 2 + t.distanceMeters * 0.9),
-          nearest,
-        );
-        // 逼近中：方塊硬切閃爍（左右共用同一個時鐘，節奏同步）。
-        if (!t.isApproaching || clock.blinkVisible) {
-          _cube(
-            canvas,
-            cam,
-            x,
-            zFar,
-            zFar - _cubeSize,
-            _colorFor(t.level),
-            left,
-          );
-        }
+      // k 由右到左 0..8；後方正中央（k=4）留空，右後 0..3、左後 5..8；越靠中央越先亮。
+      final order = left ? [5, 6, 7, 8] : [3, 2, 1, 0];
+      final count = t.level == ThreatLevel.danger ? 4 : 2;
+      for (final k in order.take(count)) {
+        _arcSegment(canvas, cam, k, rear: true, top: _colorFor(t.level));
       }
     }
-  }
-
-  void _cube(
-    Canvas canvas,
-    _Cam cam,
-    double cx,
-    double zFar,
-    double zNear,
-    Color base,
-    bool left,
-  ) {
-    const s = _cubeSize;
-    final x0 = cx - s / 2;
-    final x1 = cx + s / 2;
-    // 地面陰影
-    canvas.drawPath(
-      _poly([
-        cam.p(x0, 0, zFar),
-        cam.p(x1, 0, zFar),
-        cam.p(x1, 0, zNear),
-        cam.p(x0, 0, zNear),
-      ]),
-      Paint()..color = const Color(0x55000000),
-    );
-    final sideX = left ? x1 : x0; // 朝向道路中心的側面
-    canvas.drawPath(
-      _poly([
-        cam.p(sideX, 0, zFar),
-        cam.p(sideX, 0, zNear),
-        cam.p(sideX, s, zNear),
-        cam.p(sideX, s, zFar),
-      ]),
-      Paint()..color = _shade(base, -0.22),
-    );
-    canvas.drawPath(
-      _poly([
-        cam.p(x0, 0, zNear),
-        cam.p(x1, 0, zNear),
-        cam.p(x1, s, zNear),
-        cam.p(x0, s, zNear),
-      ]),
-      Paint()..color = base,
-    );
-    canvas.drawPath(
-      _poly([
-        cam.p(x0, s, zFar),
-        cam.p(x1, s, zFar),
-        cam.p(x1, s, zNear),
-        cam.p(x0, s, zNear),
-      ]),
-      Paint()..color = _shade(base, 0.18),
-    );
   }
 
   @override

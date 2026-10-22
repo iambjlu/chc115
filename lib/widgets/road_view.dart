@@ -174,32 +174,40 @@ Color _shade(Color c, double lightnessDelta) {
 const _arcSegs = 9;
 const _frontOrange = Color(0xFFFF8A1F);
 
-/// 自行車周圍的立體弧形燈條中的一小段（倒車雷達樣式）：沿前方（[rear] 為 false）或後方半圈
-/// 分成 [_arcSegs] 段，第 [k] 段為 0..8（由右到左）。以 [top] 為頂面色、較暗的側面墊出厚度，
-/// 外側帶光暈。
+/// 自行車周圍的立體弧形燈條中的一小段（倒車雷達樣式）：以車身中心為圓心的橢圓環，
+/// 沿前方（[rear] 為 false）或後方半圈分成 [_arcSegs] 段，第 [k] 段為 0..8（由右到左）。
+/// [gapMeters] 為燈條內緣離車身的額外距離（越近越貼車）。以 [top] 為頂面色、
+/// 較暗的側面墊出厚度，外側帶光暈。
 void _arcSegment(
   Canvas canvas,
   _Cam cam,
   int k, {
   required bool rear,
   required Color top,
+  required double gapMeters,
 }) {
   const gap = 0.05; // 段與段之間的縫（弧度）
-  const r0 = 1.35, r1 = 1.85, height = 0.45;
+  const height = 0.45;
+  // 內緣橢圓半徑：略大於車身（寬約 1.5m、長約 3m），再加上距離造成的外推。
+  final rx0 = 0.95 + gapMeters, rz0 = 1.75 + gapMeters * 1.2;
+  final rx1 = rx0 + 0.45, rz1 = rz0 + 0.55;
   final sign = rear ? -1.0 : 1.0;
-  Offset pt(double r, double a, double h) =>
-      cam.p(r * math.cos(a), h, sign * (1.0 + 1.1 * r * math.sin(a)));
+  Offset pt(bool outer, double a, double h) => cam.p(
+    (outer ? rx1 : rx0) * math.cos(a),
+    h,
+    sign * (outer ? rz1 : rz0) * math.sin(a),
+  );
   final a0 = k * math.pi / _arcSegs + gap;
   final a1 = (k + 1) * math.pi / _arcSegs - gap;
   const n = 4;
-  List<Offset> edge(double r, double h) => [
-    for (var j = 0; j <= n; j++) pt(r, a0 + (a1 - a0) * j / n, h),
+  List<Offset> edge(bool outer, double h) => [
+    for (var j = 0; j <= n; j++) pt(outer, a0 + (a1 - a0) * j / n, h),
   ];
   Path quad(List<Offset> lowA, List<Offset> highA) =>
       _poly([...lowA, ...highA.reversed]);
 
-  final outerLow = edge(r1, 0), outerHigh = edge(r1, height);
-  final innerLow = edge(r0, 0), innerHigh = edge(r0, height);
+  final outerLow = edge(true, 0), outerHigh = edge(true, height);
+  final innerLow = edge(false, 0), innerHigh = edge(false, height);
   final topPath = _poly([...outerHigh, ...innerHigh.reversed]);
 
   canvas.drawPath(
@@ -284,7 +292,14 @@ class _RoadPainter extends CustomPainter {
     // 前方沒有距離判斷，一律用橘色。sectorOn 順序為左前、正前、右前；k 0..2 右前、3..5 正前、6..8 左前。
     for (var k = 0; k < _arcSegs; k++) {
       if (hazards[2 - k ~/ 3].hasObstacle) {
-        _arcSegment(canvas, cam, k, rear: false, top: _frontOrange);
+        _arcSegment(
+          canvas,
+          cam,
+          k,
+          rear: false,
+          top: _frontOrange,
+          gapMeters: 0.5, // 前方沒有距離，固定中等間距
+        );
       }
     }
 
@@ -375,8 +390,17 @@ class _CarsPainter extends CustomPainter {
       // k 由右到左 0..8；後方正中央（k=4）留空，右後 0..3、左後 5..8；越靠中央越先亮。
       final order = left ? [5, 6, 7, 8] : [3, 2, 1, 0];
       final count = t.level == ThreatLevel.danger ? 4 : 2;
+      // 距離 5m 貼著車身、30m 外推約 1.3m：越近燈條越靠車。
+      final gap = 0.1 + (t.distanceMeters.clamp(5, 30) - 5) / 25 * 1.2;
       for (final k in order.take(count)) {
-        _arcSegment(canvas, cam, k, rear: true, top: _colorFor(t.level));
+        _arcSegment(
+          canvas,
+          cam,
+          k,
+          rear: true,
+          top: _colorFor(t.level),
+          gapMeters: gap,
+        );
       }
     }
   }

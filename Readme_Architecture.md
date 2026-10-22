@@ -94,8 +94,8 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
 
 - **`RideHudScreen`**：唯一的頁面，也是狀態持有者。
   - 內部持有 `SimulationValues _sim`（初始為 `demo`）。
-  - 由 `_sim` 衍生 `_threats`（`List<VehicleThreat>`）與 `_activeAlert`
-    （何時該顯示逼近警示文字、顯示哪一側或雙側）。
+  - 由 `_sim` 衍生 `_threats`（`List<VehicleThreat>`）。畫面上不再顯示逼近／坑洞障礙物的文字提示，
+    只靠弧形燈條、坑洞圖形、系統通知與提示音呈現。
   - `_openSimulationSheet()` 開啟 `SimulationSheet`，透過 `onChanged`
     回呼以 `setState` 更新 `_sim`，形成單向資料流：
     `SimulationSheet 使用者輸入 → RideHudScreen.setState → 重新計算 threats/alert → 往下傳給 RoadView`。
@@ -112,8 +112,6 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
       `rightApproaching` 由假變真才觸發一次，避免開關持續開啟時反覆
       通知；標題為「左（右）後方車輛逼近」，內文為「左（右）後方車輛
       正在逼近中」，只敘述目前狀態、不含變換車道等行動建議。
-      畫面上的 `_AlertLines` 警示文字則只顯示
-      「{左／右／左右}後方車輛快速逼近」單行狀態敘述，與通知內容分開。
     - 坑洞（`HazardCategory.pothole`）：左前/正前/右前的 `hasPothole` 由無變有才
       觸發一次，避免同一坑洞持續存在時反覆通知；三個方向共用同一個
       通知 id，因此只會保留最新觸發的那一個方向。
@@ -141,14 +139,7 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
     列出原始資料，可解析為綠字、無法解析為紅字。
   - Android 上 `SpeedGauge` 之上固定多一個 48dp 的 `SizedBox`，避免 heads-up
     系統通知橫幅蓋住車速讀數（iOS 不用系統通知，不需要）。
-  - 畫面頂端是 `SpeedGauge`（車速儀表）；內含兩個私有元件：`_AlertLines`
-    （後方車輛逼近警示，一行 `Icon(Icons.warning_rounded)` + 粗體文字）
-    與 `_PotholeAlertLine`（坑洞提示文字，依左前/正前/右前順序列出
-    目前有路況的方向，格式如「請注意左前坑洞、正前障礙物」（同方向兩者並存為「坑洞及障礙物」）；與系統通知並行顯示，樣式比照 `_AlertLines`；文字過長時以 `FittedBox` 縮小字級維持單行）。這兩個提示
-    元件皆固定保留一行高度、以 `AnimatedOpacity` 做淡入淡出（沒有提示
-    時文字改為單一空白字元、opacity 降為 0），而非用 `AnimatedSize`
-    整塊展開/收合，避免提示出現/消失時造成下方 `MapCard`／道路檢視
-    上下位移。
+  - 畫面頂端是 `SpeedGauge`（車速儀表），其下依序為 `MapCard` 與 `RoadView`。
 
 ### services（服務層）
 
@@ -256,7 +247,7 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
     右後 5 段、左後 5 段，各涵蓋 90°）：沒車時不顯示；遠亮綠、中亮黃、近亮紅，每側固定 5 段（不隨距離變化），
     距離越近燈條離車身越近；標記為「逼近中」時硬切閃爍，由單一時鐘（`_Clock`，`Ticker`）驅動，
     左右同步（刻意不做透明度補間）。
-  - 立體弧形燈條由共用函式 `_arcSegment` 繪製：以車身中心為圓心的橢圓環（半徑略大於車身，後方依距離 5～30m 向外推 0.5～1.3m，距離越近越貼車；前方固定 1.4m），每段以頂面、內外側壁與兩端斷面擠出 0.18m 厚度，
+  - 立體弧形燈條由共用函式 `_arcSegment` 繪製：以車身中心為圓心的橢圓環（半徑略大於車身，後方依距離 5～30m 向外推 0.9～1.7m，距離越近越貼車；前方固定 2.0m），每段以頂面、內外側壁與兩端斷面擠出 0.18m 厚度，
     外側帶光暈。前方障礙物（`_RoadPainter`）沿前方半圈分左前／正前／右前三區，各 3 段，
     因前方沒有距離判斷，一律使用橘色。
     painter 以時鐘作為 `repaint` 來源，捲動與閃爍不需重建整個 widget 樹。
@@ -288,7 +279,6 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
 RideHudScreen._sim  (setState)
         │
         ├─► _threats: List<VehicleThreat>  ──► RoadView（後方弧形燈條閃爍、路面坑洞、前方橘色弧形燈條）
-        ├─► _activeAlert                   ──► _AlertLines（頂部警示文字）
         └─► _sim.bikeSpeed                 ──► SpeedGauge（車速儀表）
 ```
 

@@ -175,7 +175,7 @@ const _arcSegs = 9;
 const _frontOrange = Color(0xFFFF8A1F);
 
 /// 前方弧條內緣離車身的間距（前方沒有距離資料，固定值）。
-const _frontGap = 1.4;
+const _frontGap = 2.0;
 
 /// 鏡頭是低角度俯視（地面縱深被壓縮約 1/5），而自行車圖是正上方視角；
 /// 弧條縱向半徑乘上此係數補償，才能在畫面上真的包住車圖。
@@ -411,8 +411,8 @@ class _CarsPainter extends CustomPainter {
       // 不論距離，塊數固定 5 段，距離只影響顏色與離車遠近。
       final order = left ? [5, 6, 7, 8, 9] : [0, 1, 2, 3, 4];
       const count = 5;
-      // 距離 5m 離車身 0.5m、30m 外推到 1.3m：越近燈條越靠車。
-      final gap = 0.5 + (t.distanceMeters.clamp(5, 30) - 5) / 25 * 0.8;
+      // 距離 5m 離車身 0.9m、30m 外推到 1.7m：越近燈條越靠車。
+      final gap = 0.9 + (t.distanceMeters.clamp(5, 30) - 5) / 25 * 0.8;
       for (final k in order.take(count)) {
         _arcSegment(
           canvas,

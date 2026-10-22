@@ -143,37 +143,6 @@ class _RideHudScreenState extends State<RideHudScreen> {
     ),
   ];
 
-  // 不論距離遠近，只要標記為逼近中就要顯示警告。
-  _AlertInfo? get _activeAlert {
-    final approaching = _threats.where((t) => t.isApproaching).toList();
-    if (approaching.isEmpty) return null;
-    if (approaching.length > 1) {
-      return const _AlertInfo(label: '左右後方');
-    }
-    final threat = approaching.first;
-    return _AlertInfo(label: threat.label);
-  }
-
-  // 依左前/正前/右前順序列出目前有路況的方向（如「左前坑洞、正前障礙物」）。
-  String? get _potholeAlertText {
-    String name(FrontHazard h) => switch (h) {
-      FrontHazard.pothole => '坑洞',
-      FrontHazard.obstacle => '障礙物',
-      FrontHazard.both => '坑洞及障礙物',
-      FrontHazard.none => '',
-    };
-    final items = <String>[
-      for (final (label, hazard) in [
-        ('左前', _sim.frontLeft),
-        ('正前', _sim.frontCenter),
-        ('右前', _sim.frontRight),
-      ])
-        if (hazard != FrontHazard.none) '$label${name(hazard)}',
-    ];
-    if (items.isEmpty) return null;
-    return '請注意${items.join('、')}';
-  }
-
   void _openSimulationSheet() {
     showModalBottomSheet<void>(
       context: context,
@@ -314,8 +283,6 @@ class _RideHudScreenState extends State<RideHudScreen> {
         !_isBle ||
         BleRadarService.instance.dataStatus.value == RadarDataStatus.receiving;
     final threats = _threats;
-    final alert = _activeAlert;
-    final potholeAlertText = _potholeAlertText;
     final speed = _isBle ? _gpsSpeed : _sim.bikeSpeed.round();
 
     // 一開始返回歡迎畫面（含手勢返回、斷線）就立刻撤銷 SnackBar，不等轉場動畫結束。
@@ -381,8 +348,6 @@ class _RideHudScreenState extends State<RideHudScreen> {
               // Android 的 heads-up 通知會蓋住最上方，預留空間避免擋到車速。
               if (Platform.isAndroid) const SizedBox(height: 48),
               SpeedGauge(speed: speed),
-              _AlertLines(alert: hasData ? alert : null),
-              _PotholeAlertLine(text: hasData ? potholeAlertText : null),
               const SizedBox(height: 14),
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16),
@@ -453,79 +418,3 @@ class _RawDataPanel extends StatelessWidget {
 }
 
 enum _HudMenu { simulation, sound, disconnect }
-
-/// 坑洞提示文字（除了系統通知外，畫面上也常駐顯示目前亮起的坑洞方向）。
-/// 樣式比照後方車輛逼近警示（Icon + 粗體文字），並固定保留一行高度，
-/// 避免在「有坑洞提示」與「無坑洞提示」間切換時造成下方 MapCard／
-/// 雷達視圖位移，因此以 `AnimatedOpacity` 淡入淡出取代整塊展開/收合。
-class _PotholeAlertLine extends StatelessWidget {
-  const _PotholeAlertLine({required this.text});
-
-  final String? text;
-
-  @override
-  Widget build(BuildContext context) {
-    final titleStyle = Theme.of(context).textTheme.titleMedium?.copyWith(
-      fontWeight: FontWeight.w800,
-      color: HudColors.danger,
-    );
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(22, 6, 22, 0),
-      child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 220),
-        opacity: text == null ? 0 : 1,
-        child: Row(
-          children: [
-            const Icon(Icons.warning_rounded, size: 18, color: HudColors.warn),
-            const SizedBox(width: 8),
-            // 文字過長（多方向同時有路況）時縮小字級，維持單行、不被切掉。
-            Expanded(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Text(text ?? ' ', style: titleStyle),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AlertInfo {
-  const _AlertInfo({required this.label});
-
-  final String label;
-}
-
-class _AlertLines extends StatelessWidget {
-  const _AlertLines({required this.alert});
-
-  final _AlertInfo? alert;
-
-  @override
-  Widget build(BuildContext context) {
-    final titleStyle = Theme.of(context).textTheme.titleMedium?.copyWith(
-      fontWeight: FontWeight.w800,
-      color: HudColors.danger,
-    );
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(22, 6, 22, 0),
-      child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 220),
-        opacity: alert == null ? 0 : 1,
-        child: Row(
-          children: [
-            const Icon(Icons.warning_rounded, size: 18, color: HudColors.warn),
-            const SizedBox(width: 8),
-            Text(
-              alert == null ? ' ' : '${alert!.label}車輛快速逼近',
-              style: titleStyle,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

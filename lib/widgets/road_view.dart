@@ -9,7 +9,7 @@ import '../theme/hud_colors.dart';
 
 /// 虛擬道路檢視：鏡頭在自行車後上方往前看，自行車位於道路中間，
 /// 左右後方來車以立方體顯示在自行車後方的左右兩側（距離越近越靠近車身），
-/// 前方坑洞畫成路面上的坑、障礙物為環形。標記為「逼近中」的立方體會硬切閃爍
+/// 前方坑洞畫成路面上的坑、障礙物為自行車前方的弧形燈條。標記為「逼近中」的立方體會硬切閃爍
 /// （無淡入淡出），左右共用同一個時鐘，節奏永遠同步。
 /// 地面橫向格線依車速往後捲動，營造行進感（刻意不畫車道線）。
 class RoadView extends StatefulWidget {
@@ -217,19 +217,15 @@ class _RoadPainter extends CustomPainter {
       canvas.drawLine(cam.p(-half, 0, z), cam.p(half, 0, z), grid);
     }
 
-    // 前方路況，左前 / 正前 / 右前：坑洞是畫在路面上的坑、障礙物是橘色環形，
-    // 兩者並存時障礙物疊在坑洞上面。
+    // 前方路況，左前 / 正前 / 右前：坑洞是畫在路面上的坑、障礙物是自行車前方的弧形燈條，
+    // 兩者並存時坑洞與弧形燈條同時顯示。
     const slots = [(-2.8, 0), (0.0, 1), (2.8, 2)];
     final hazards = [frontLeft, frontCenter, frontRight];
     for (final (x, i) in slots) {
       if (hazards[i].hasPothole) _pit(canvas, cam, x, 12);
     }
-    // 障礙物畫在坑洞之後；兩者並存時障礙物直接疊在該坑上面。
-    for (final (x, i) in slots) {
-      if (hazards[i].hasObstacle) {
-        _cone(canvas, cam, x, hazards[i].hasPothole ? 12 : 22);
-      }
-    }
+    // 障礙物：自行車前方的分段弧形燈條（倒車雷達樣式），左前／正前／右前各一區。
+    _arc(canvas, cam, [for (final h in hazards) h.hasObstacle]);
 
     // 遠端淡出到背景色，避免道路在地平線硬切。
     final fadeRect = Rect.fromLTWH(0, 0, size.width, size.height * 0.4);
@@ -244,53 +240,43 @@ class _RoadPainter extends CustomPainter {
     );
   }
 
-  /// 障礙物：路面上的橘色環形（圓環），外圈到內圈有明暗漸層，環上均分白色反光段。
-  void _cone(Canvas canvas, _Cam cam, double x, double z) {
-    const zStretch = 2.0;
-    const outer = 0.9, inner = 0.5;
+  /// 障礙物弧形燈條：沿自行車前方半圈分成 9 小段（右前 / 正前 / 左前各 3 段），
+  /// 該方向有障礙物時整區亮紅橘色並帶光暈，沒有障礙物的區域不畫。
+  void _arc(Canvas canvas, _Cam cam, List<bool> sectorOn) {
+    const segs = 9;
+    const gap = 0.05; // 段與段之間的縫（弧度）
+    const r0 = 1.35, r1 = 1.85;
     Offset pt(double r, double a) =>
-        cam.p(x + r * math.cos(a), 0, z + zStretch * r * math.sin(a));
-    Path ringPath(double r) =>
-        _poly([for (var i = 0; i < 48; i++) pt(r, i * math.pi / 24)]);
-
-    final ring = Path.combine(
-      PathOperation.difference,
-      ringPath(outer),
-      ringPath(inner),
-    );
-    canvas.drawPath(
-      ringPath(outer).shift(const Offset(2, 3)),
-      Paint()..color = const Color(0x66000000),
-    );
-    canvas.drawPath(
-      ring,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            _shade(_obstacle, 0.12),
-            _obstacle,
-            _shade(_obstacle, -0.22),
-          ],
-        ).createShader(ring.getBounds()),
-    );
-    // 均分的白色反光段（沿環一圈 6 段）
-    const mid = (outer + inner) / 2;
-    final band =
+        cam.p(r * math.cos(a), 0, 1.0 + 1.1 * r * math.sin(a));
+    for (var k = 0; k < segs; k++) {
+      // k 0..2 右前、3..5 正前、6..8 左前；sectorOn 順序為左前、正前、右前。
+      final on = sectorOn[2 - k ~/ 3];
+      if (!on) continue;
+      final a0 = k * math.pi / segs + gap, a1 = (k + 1) * math.pi / segs - gap;
+      final path = Path()..moveTo(pt(r1, a0).dx, pt(r1, a0).dy);
+      for (var j = 1; j <= 4; j++) {
+        final p = pt(r1, a0 + (a1 - a0) * j / 4);
+        path.lineTo(p.dx, p.dy);
+      }
+      for (var j = 4; j >= 0; j--) {
+        final p = pt(r0, a0 + (a1 - a0) * j / 4);
+        path.lineTo(p.dx, p.dy);
+      }
+      path.close();
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = _obstacle.withValues(alpha: 0.7)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
+      );
+      canvas.drawPath(path, Paint()..color = const Color(0xFFFF3B1F));
+      canvas.drawPath(
+        path,
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = (outer - inner) * cam.scaleAt(z) * 0.5
-          ..strokeCap = StrokeCap.butt
-          ..color = Colors.white.withValues(alpha: 0.9);
-    for (var k = 0; k < 6; k++) {
-      final a0 = k * math.pi / 3 + 0.15;
-      final seg = Path()..moveTo(pt(mid, a0).dx, pt(mid, a0).dy);
-      for (var j = 1; j <= 8; j++) {
-        final p = pt(mid, a0 + j * 0.45 / 8 * 2);
-        seg.lineTo(p.dx, p.dy);
-      }
-      canvas.drawPath(seg, band);
+          ..strokeWidth = 1.2
+          ..color = const Color(0xFFFFB27A),
+      );
     }
   }
 

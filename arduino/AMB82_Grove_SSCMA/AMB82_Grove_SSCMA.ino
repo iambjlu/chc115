@@ -106,7 +106,7 @@ void sendSimulatedRadar() {
   const int right = 3 - (int)((t / 3) % 3);
   char line[32];
   snprintf(line, sizeof(line), "%d,%d,%d,%d,%d,%d,%d",
-          left, right, left == 3 ? 1 : 0, right == 3 ? 1 : 0,
+          right, left, right == 3 ? 1 : 0, left == 3 ? 1 : 0,
           t == 3 ? 1 : (t == 9 ? 2 : 0), (t == 6 || t == 7) ? 1 : 0, t == 10 ? 3 : 0);
   Tx.writeString(line);
   Tx.notify(notifyConnection);

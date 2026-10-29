@@ -176,7 +176,7 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   `AMB82-Radar`（或 service UUID `6E400001-B5A3-F393-E0A9-E50E24DCCA9E`），
   連線後訂閱 TX characteristic（`6E400003-…`）的 Notify。每筆資料為一行
   ASCII CSV（7 欄，來源為 `arduino/App接收格式.xlsx`）：
-  `左後距離,右後距離,左後逼近,右後逼近,左前,正前,右前`。距離 1 遠
+  `右後距離,左後距離,右後逼近,左後逼近,左前,正前,右前`（範例 `1,3,0,1,1,0,1`：右後遠、左後近且逼近、左前有坑、右前有坑）。距離 1 遠
   （30m）／2 中（15m）／3 近（5m）／0 沒車（`ThreatThresholds.noVehicleDistance` = 99，與「遠」區分，不畫弧條），逼近 1 有／0 沒有；前方三欄
   0 沒坑沒障礙／1 有坑／2 有障礙／3 有坑有障礙（`FrontHazard.fromCode`）；
   距離欄位為其他值、任何欄位為 9（感測錯誤）或格式不符，整筆視為無效

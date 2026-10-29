@@ -4,11 +4,13 @@ import 'package:chc115/services/ble_radar_service.dart';
 void main() {
   const base = SimulationValues.empty;
   test('decodes firmware CSV without newline', () {
-    final v = BleRadarService.parse('1,3,0,1,0,0,0', base)!;
-    expect(v.leftDistance, 30);
-    expect(v.rightDistance, 5);
-    expect(v.leftApproaching, false);
-    expect(v.rightApproaching, true);
+    final v = BleRadarService.parse('1,3,0,1,1,0,1', base)!;
+    expect(v.rightDistance, 30);
+    expect(v.leftDistance, 5);
+    expect(v.rightApproaching, false);
+    expect(v.leftApproaching, true);
+    expect(v.frontLeft, FrontHazard.pothole);
+    expect(v.frontRight, FrontHazard.pothole);
     expect(v.frontCenter, FrontHazard.none);
     expect(v.bikeSpeed, base.bikeSpeed);
   });
@@ -16,7 +18,7 @@ void main() {
     for (var t = 0; t < 12; t++) {
       final left = t < 4 ? 1 : (t < 8 ? 2 : 3);
       final right = 3 - ((t ~/ 3) % 3);
-      final packet = '$left,$right,${left == 3 ? 1 : 0},${right == 3 ? 1 : 0},'
+      final packet = '$right,$left,${right == 3 ? 1 : 0},${left == 3 ? 1 : 0},'
           '${t == 3 ? 1 : (t == 9 ? 2 : 0)},${t == 6 || t == 7 ? 1 : 0},${t == 10 ? 3 : 0}';
       final v = BleRadarService.parse(packet, base)!;
       expect(v.frontLeft, t == 3 ? FrontHazard.pothole : (t == 9 ? FrontHazard.obstacle : FrontHazard.none));

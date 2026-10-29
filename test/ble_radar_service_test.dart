@@ -34,6 +34,13 @@ void main() {
       expect(BleRadarService.parse(packet, base), isNull, reason: packet);
     }
   });
+  test('any field 9 is flagged as sensor error, malformed is not', () {
+    expect(BleRadarService.hasSensorError('1,9,0,1,0,0,0'), isTrue);
+    expect(BleRadarService.hasSensorError('9,9,9,9,9,9,9'), isTrue);
+    expect(BleRadarService.hasSensorError('1,3,0,1,0,0,0'), isFalse);
+    expect(BleRadarService.hasSensorError('x,9,0,1,0,0,0'), isFalse);
+    expect(BleRadarService.hasSensorError('1,9,0'), isFalse);
+  });
   test('distance 0 means no vehicle (distinct from far)', () {
     final v = BleRadarService.parse('0,0,0,0,1,0,0', base)!;
     expect(v.leftDistance, 99);

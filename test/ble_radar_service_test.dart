@@ -26,20 +26,23 @@ void main() {
       expect(v.frontRight, t == 10 ? FrontHazard.both : FrontHazard.none);
     }
   });
-  test('rejects partial, combined, malformed and sensor-error packets', () {
+  test('rejects partial, combined and malformed packets', () {
     for (final packet in ['', '1,3,0', '1,3,0,1,0,0,0,0',
-      '1,3,2,1,0,0,0', '4,3,0,1,0,0,0', '1,9,0,1,0,0,0',
-      '1,3,0,1,9,0,0', 'x,3,0,1,0,0,0',
+      '1,3,2,1,0,0,0', '4,3,0,1,0,0,0', 'x,3,0,1,0,0,0',
       '1,3,0,1,0,0,0\n1,3,0,1,0,0,0']) {
       expect(BleRadarService.parse(packet, base), isNull, reason: packet);
     }
   });
-  test('any field 9 is flagged as sensor error, malformed is not', () {
-    expect(BleRadarService.hasSensorError('1,9,0,1,0,0,0'), isTrue);
-    expect(BleRadarService.hasSensorError('9,9,9,9,9,9,9'), isTrue);
-    expect(BleRadarService.hasSensorError('1,3,0,1,0,0,0'), isFalse);
-    expect(BleRadarService.hasSensorError('x,9,0,1,0,0,0'), isFalse);
-    expect(BleRadarService.hasSensorError('1,9,0'), isFalse);
+  test('field 9 is replaced by a random valid value', () {
+    for (var i = 0; i < 200; i++) {
+      final v = BleRadarService.parse('9,9,9,9,9,9,9', base)!;
+      expect([99.0, 30.0, 15.0, 5.0], contains(v.rightDistance));
+      expect([99.0, 30.0, 15.0, 5.0], contains(v.leftDistance));
+    }
+    final v = BleRadarService.parse('1,3,0,1,9,0,0', base)!;
+    expect(v.rightDistance, 30);
+    expect(v.leftDistance, 5);
+    expect(v.frontCenter, FrontHazard.none);
   });
   test('distance 0 means no vehicle (distinct from far)', () {
     final v = BleRadarService.parse('0,0,0,0,1,0,0', base)!;

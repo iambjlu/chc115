@@ -179,8 +179,7 @@ screens/ride_hud_screen.dart      ← 狀態持有者（StatefulWidget）
   `右後距離,左後距離,右後逼近,左後逼近,左前,正前,右前`（範例 `1,3,0,1,1,0,1`：右後遠、左後近且逼近、左前有坑、右前有坑）。距離 1 遠
   （30m）／2 中（15m）／3 近（5m）／0 沒車（`ThreatThresholds.noVehicleDistance` = 99，與「遠」區分，不畫弧條），逼近 1 有／0 沒有；前方三欄
   0 沒坑沒障礙／1 有坑／2 有障礙／3 有坑有障礙（`FrontHazard.fromCode`）；
-  任何欄位為 9（感測錯誤）時整筆捨棄，`_onData` 以 `hasSensorError()` 判斷後沿用上一筆可用資料，
-  `dataStatus` 不變（不顯示「尚無有效資料」；若尚未收過有效資料則維持等待）；距離欄位為其他值或格式不符，整筆視為無效
+  任何欄位為 9（感測錯誤）時，`parse()` 只把該欄改成隨機的可用數字（距離與前方 0～3、逼近 0～1），其餘欄位照常使用；距離欄位為其他值或格式不符，整筆視為無效
   （`parse()` 回傳 null，`dataStatus` 變 `invalid`，HUD 顯示「尚無有效資料」）；也接受 7 個連續數字。車速不在協定內。
   `debugMode`（`ValueNotifier<bool>`）開啟時，`_onData` 會把每筆收到的原始資料
   （時間、位元組數、跳脫換行後的文字、是否可解析）加入 `rawLog`（最新在前、
@@ -309,7 +308,7 @@ RideHudScreen._sim  (setState)
 
 ## 測試
 
-- `test/ble_radar_parse_test.dart`：驗證 `BleRadarService.parse()` 的 7 欄解析、9＝感測錯誤（`hasSensorError`）與錯誤格式處理。
+- `test/ble_radar_parse_test.dart`：驗證 `BleRadarService.parse()` 的 7 欄解析、9＝感測錯誤時該欄隨機取代與錯誤格式處理。
 - `test/widget_test.dart`：驗證歡迎畫面標題、無 MAC 直連按鈕、「使用模擬數據繼續」預設隱藏且長按「連線」後才出現，進入模擬 HUD 後顯示車速 `20 km/h`，並可由左下選單看到「斷線」與開啟「模擬控制」。
 
 ## 延伸開發建議

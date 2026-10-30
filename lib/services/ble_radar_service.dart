@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -181,12 +182,6 @@ class BleRadarService {
     rawPacket.value = text;
     final parsed = parse(text, _latest);
     if (debugMode.value) _appendRawLog(raw, data.length, parsed != null);
-    if (parsed == null && hasSensorError(text)) {
-      // 任一欄為 9（感測錯誤）：整筆捨棄，畫面維持上一筆可用資料，不顯示無效。
-      debugPrint('[BLE] 收到感測錯誤（含 9），沿用上一筆資料：$text');
-      if (dataStatus.value == RadarDataStatus.receiving) _armStaleTimer();
-      return;
-    }
     if (parsed == null) {
       dataStatus.value = RadarDataStatus.invalid;
       debugPrint('[BLE] 收到無法解析的資料：$text');
@@ -211,26 +206,17 @@ class BleRadarService {
     rawLog.value = [line, ...rawLog.value].take(_rawLogLimit).toList();
   }
 
-  /// 7 欄數字中是否有任一欄為 9（感測錯誤）。
-  @visibleForTesting
-  static bool hasSensorError(String line) {
-    final text = line.trim();
-    final parts =
-        text.contains(',')
-            ? text.split(',').map((e) => e.trim()).toList()
-            : text.split('');
-    if (parts.length != 7) return false;
-    final n = parts.map(int.tryParse).toList();
-    return n.every((e) => e != null) && n.contains(9);
-  }
-
   /// 解析一行 7 欄資料，欄位依序為：
   /// 右後距離、左後距離（0 沒車／1 遠／2 中／3 近）、右後逼近、左後逼近、
   /// 左前、正前、右前（0 沒坑沒障礙／1 有坑／2 有障礙／3 有坑有障礙）；任何欄位為 9 代表感測錯誤，
-  /// 整筆資料無效（`_onData` 會沿用上一筆可用資料）。欄位以逗號分隔，也接受 7 個連續數字。
+  /// 該欄改從可用數字中隨機挑一個（距離 0～3、逼近 0～1、前方 0～3，可傳入 [random] 以便測試）。欄位以逗號分隔，也接受 7 個連續數字。
   /// 格式不符回傳 null。車速不在此協定內，沿用 [base.bikeSpeed]。
   @visibleForTesting
-  static SimulationValues? parse(String line, SimulationValues base) {
+  static SimulationValues? parse(
+    String line,
+    SimulationValues base, [
+    Random? random,
+  ]) {
     final text = line.trim();
     final parts =
         text.contains(',')
@@ -239,6 +225,11 @@ class BleRadarService {
     if (parts.length != 7) return null;
     final n = parts.map(int.tryParse).toList();
     if (n.any((e) => e == null)) return null;
+    // 感測錯誤（9）：該欄從可用數字中隨機選一個（逼近欄只有 0／1，其餘 0～3）。
+    final rng = random ?? Random();
+    for (var i = 0; i < n.length; i++) {
+      if (n[i] == 9) n[i] = rng.nextInt(i == 2 || i == 3 ? 2 : 4);
+    }
 
     double? distance(int code) => switch (code) {
       0 => ThreatThresholds.noVehicleDistance, // 沒車（與「遠」區分）
